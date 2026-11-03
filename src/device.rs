@@ -57,6 +57,11 @@ pub fn trigger_axis(value: f32) -> Xbox360Trigger {
     Xbox360Trigger::new((value.clamp(0.0, 1.0) * 255.0).round() as u8)
 }
 
+fn evdev_stick(x: f32, y: f32) -> (Xbox360Axis, Xbox360Axis) {
+    // The web protocol uses positive-up Y; Linux joystick axes use positive-down Y.
+    (stick_axis(x), stick_axis(-y))
+}
+
 fn apply(device: &mut Xbox360Controller, frame: &InputFrame) -> Result<(), String> {
     for (index, control) in BUTTONS.iter().copied().enumerate() {
         device
@@ -71,11 +76,14 @@ fn apply(device: &mut Xbox360Controller, frame: &InputFrame) -> Result<(), Strin
             })
             .map_err(|error| error.to_string())?;
     }
+    let [lx, ly, rx, ry] = frame.sticks;
+    let (lx, ly) = evdev_stick(lx, ly);
+    let (rx, ry) = evdev_stick(rx, ry);
     device
-        .set_left_stick(stick_axis(frame.sticks[0]), stick_axis(frame.sticks[1]))
+        .set_left_stick(lx, ly)
         .map_err(|error| error.to_string())?;
     device
-        .set_right_stick(stick_axis(frame.sticks[2]), stick_axis(frame.sticks[3]))
+        .set_right_stick(rx, ry)
         .map_err(|error| error.to_string())?;
     device
         .set_triggers(
@@ -176,7 +184,7 @@ pub fn run_xbox_owner(
 
 #[cfg(test)]
 mod tests {
-    use super::{same_controls, stick_axis, trigger_axis};
+    use super::{evdev_stick, same_controls, stick_axis, trigger_axis};
     use crate::input::InputFrame;
 
     #[test]
@@ -186,6 +194,20 @@ mod tests {
         assert_eq!(stick_axis(1.0).raw(), 32767);
         assert_eq!(trigger_axis(0.0).raw(), 0);
         assert_eq!(trigger_axis(1.0).raw(), 255);
+    }
+
+    #[test]
+    fn maps_browser_stick_directions_to_evdev() {
+        for ((x, y), expected) in [
+            ((-1.0, 0.0), (-32767, 0)),
+            ((1.0, 0.0), (32767, 0)),
+            ((0.0, 1.0), (0, -32767)),
+            ((0.0, -1.0), (0, 32767)),
+            ((0.0, 0.0), (0, 0)),
+        ] {
+            let (x, y) = evdev_stick(x, y);
+            assert_eq!((x.raw(), y.raw()), expected);
+        }
     }
 
     #[test]

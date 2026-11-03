@@ -22,7 +22,7 @@ JSON frames contain `v: 1`, `seq` (increasing unsigned integer), `client_ms` (br
 
 `buttons`: A, B, X, Y, LB, RB, Back, Start, Guide, L3, R3, D-up, D-down, D-left, D-right.
 
-`sticks`: left-X, left-Y, right-X, right-Y. Vertical axis is positive up. The frontend converts screen-down coordinate into negative Y. Backend clamps after validating. The native mapper scales to signed 16-bit axes; triggers scale to 0..255.
+`sticks`: left-X, left-Y, right-X, right-Y. Vertical axis is positive up. The frontend converts screen-down coordinate into negative Y. Backend clamps after validating. The uinput mapper converts vertical axes to Linux positive-down coordinates and scales both axes to signed 16-bit values; triggers scale to 0..255.
 
 The protocol is intentionally not a cross-controller or IUCM schema. Future controller families will have separately versioned mappings without altering `virtualgamepad`.
 
@@ -64,6 +64,9 @@ masked WebSocket frames with generated input snapshots.
   observed all 11 buttons and all four D-pad directions individually, plus
   simultaneous face buttons, both stick pairs, and both triggers.
   After 360 ms without frames, SDL read the initial neutral state.
+- A follow-up directional probe found both vertical axes reversed in SDL.
+  After converting protocol Y at the uinput boundary, SDL reported up/left
+  as negative and down/right as positive for both sticks across two connections.
 - Mobile browser certificate trust, cookie handling, multi-touch,
   pointer cancellation, visibility changes, and browser input rate and jitter
   still need a phone run. This probe sampled SDL state after each input and
