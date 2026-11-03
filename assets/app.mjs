@@ -20,7 +20,7 @@ function sendSnapshot() {
     return;
   }
   sequence += 1;
-  socket.send(JSON.stringify(snapshot(state, sequence)));
+  socket.send(JSON.stringify(snapshot(state, sequence, performance.now())));
 }
 
 function resetControls() {

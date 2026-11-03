@@ -18,7 +18,7 @@ M1 is **single-client** and only provides the Xbox 360 *style* Linux evdev contr
 
 ## State protocol
 
-JSON frames contain `v: 1`, `seq` (increasing unsigned integer), `buttons` (15 booleans, enumerated below), `sticks` (four finite numbers in [-1,1]), and `triggers` (two finite numbers in [0,1]). Browser sends current full state at a regular rate and on meaningful control transitions.
+JSON frames contain `v: 1`, `seq` (increasing unsigned integer), `client_ms` (browser monotonic milliseconds, never trusted as a host clock), `buttons` (15 booleans, enumerated below), `sticks` (four finite numbers in [-1,1]), and `triggers` (two finite numbers in [0,1]). Browser sends current full state at a regular rate and on meaningful control transitions.
 
 `buttons`: A, B, X, Y, LB, RB, Back, Start, Guide, L3, R3, D-up, D-down, D-left, D-right.
 

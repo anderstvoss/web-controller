@@ -9,10 +9,11 @@ export function newState() {
   };
 }
 
-export function snapshot(state, seq) {
+export function snapshot(state, seq, clientMs) {
   return {
     v: 1,
     seq,
+    client_ms: clientMs,
     buttons: [...state.buttons],
     sticks: [...state.sticks],
     triggers: [...state.triggers],

@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 import { newState, snapshot, setStick, clearStick, neutralize } from "./input-model.mjs";
 
 test("M1 state has the exact advertised shape", () => {
-  const value = snapshot(newState(), 5);
+  const value = snapshot(newState(), 5, 42.25);
   assert.equal(value.v, 1);
   assert.equal(value.seq, 5);
+  assert.equal(value.client_ms, 42.25);
   assert.equal(value.buttons.length, 15);
   assert.deepEqual(value.sticks, [0, 0, 0, 0]);
   assert.deepEqual(value.triggers, [0, 0]);
@@ -32,7 +33,7 @@ test("neutralization clears all held controls", () => {
 
 test("snapshot does not alias mutable controller state", () => {
   const value = newState();
-  const saved = snapshot(value, 1);
+  const saved = snapshot(value, 1, 22.5);
   value.buttons[0] = true;
   assert.equal(saved.buttons[0], false);
 });

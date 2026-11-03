@@ -13,6 +13,8 @@ pub struct InputFrame {
     pub v: u8,
     /// Strictly increasing within one WebSocket.
     pub seq: u64,
+    /// Browser monotonic milliseconds; never compare directly to a server clock.
+    pub client_ms: f64,
     pub buttons: [bool; BUTTON_COUNT],
     /// Left X/Y, right X/Y, normalized to -1..=1; positive Y is up.
     pub sticks: [f32; 4],
@@ -25,6 +27,7 @@ impl Default for InputFrame {
         Self {
             v: 1,
             seq: 0,
+            client_ms: 0.0,
             buttons: [false; BUTTON_COUNT],
             sticks: [0.0; 4],
             triggers: [0.0; 2],
@@ -40,6 +43,9 @@ impl InputFrame {
     pub fn validate(&self) -> Result<(), &'static str> {
         if self.v != 1 {
             return Err("unsupported input version");
+        }
+        if !self.client_ms.is_finite() || self.client_ms < 0.0 {
+            return Err("invalid client monotonic timestamp");
         }
         if self
             .sticks
@@ -101,6 +107,9 @@ mod tests {
         frame.triggers[0] = -0.01;
         assert!(frame.validate().is_err());
         frame.triggers[0] = 0.0;
+        frame.client_ms = -1.0;
+        assert!(frame.validate().is_err());
+        frame.client_ms = 0.0;
         frame.v = 9;
         assert!(frame.validate().is_err());
     }
