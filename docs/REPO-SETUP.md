@@ -146,8 +146,6 @@ cat > /tmp/branch-protection.json <<'EOF'
       "Rust lint",
       "MSRV (cargo check on rust-version)",
       "Rust build and test (ubuntu-latest)",
-      "Rust build and test (macos-latest)",
-      "Rust build and test (windows-latest)",
       "Policy checks (ubuntu-latest)",
       "Policy checks (macos-latest)",
       "Policy checks (windows-latest)",

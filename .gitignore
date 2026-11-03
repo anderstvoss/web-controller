@@ -50,6 +50,14 @@ coverage/
 *.profraw
 *.profdata
 
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Frontend dependencies and build output (web/ is planned)
+node_modules/
+/web/dist/
+
 # Generated artifacts
 dist/
 build/

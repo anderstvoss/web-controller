@@ -1,15 +1,15 @@
 [package]
-name = "TEMPLATE_CRATE_NAME"
+name = "web-controller"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 license = "AGPL-3.0-only"
-description = "TEMPLATE: one-sentence description of what the crate does."
-repository = "https://github.com/TEMPLATE_OWNER/TEMPLATE_REPO"
+description = "Serves a local web page that turns smartphones into Linux virtual game controllers through virtualgamepad."
+repository = "https://github.com/anderstvoss/web-controller"
 readme = "README.md"
-keywords = ["TEMPLATE", "max", "5", "keywords"]
-categories = ["TEMPLATE_VALID_CATEGORY"]
-authors = ["TEMPLATE Author Name <author@example.com>"]
+keywords = ["gamepad", "controller", "uinput", "websocket", "linux"]
+categories = ["hardware-support"]
+publish = false
 
 [dependencies]
 

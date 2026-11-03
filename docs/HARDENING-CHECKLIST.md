@@ -55,7 +55,7 @@ do not unpin without a deliberate audit.
       defensive posture summary.
 - [ ] [CONTRIBUTING.md](../CONTRIBUTING.md) — dev setup, required
       gates, PR process, bug/feature/security reporting.
-- [ ] [AGENTS.md](../AGENTS.md) — optional, for AI-agent collaborators.
+- [x] [AGENTS.md](../AGENTS.md) — rules for AI-agent collaborators.
 
 ### GitHub configuration
 
@@ -73,7 +73,7 @@ do not unpin without a deliberate audit.
 ### CI workflows (all visibility-gated)
 
 - [ ] [.github/workflows/ci.yml](../.github/workflows/ci.yml) —
-      `rust-lint`, `msrv`, `rust-test` (ubuntu+macos+windows), `policy`
+      `rust-lint`, `msrv`, `rust-test` (ubuntu only: Linux-only service), `policy`
       (matrix), `supply-chain`, `dependency-review`, `python-scripts`.
       harden-runner egress block on every Linux job.
 - [ ] [.github/workflows/codeql.yml](../.github/workflows/codeql.yml)
@@ -161,6 +161,63 @@ Every job in every workflow is `if: ${{ !github.event.repository.private }}`
       `sbom-cyclonedx-<sha>` artifact appears.
 - [ ] Sanity test push protection: try pushing a fake AWS access key
       on a scratch branch. Push should be rejected server-side.
+
+## Frontend (`web/`) onboarding
+
+The service ships a small TypeScript frontend, built to static assets and
+served by the Rust binary. `web/` does not exist yet, and the TypeScript
+profile is mapped in the project baseline but not yet proven in public CI.
+The pull request that creates `web/` adds all of the following in the same
+change, so the frontend is never ungated. That PR is the validation run:
+once it is green, feed the working config back into
+`baseline-hardened-repo`.
+
+Toolchain and lockfile:
+
+- [ ] `web/.nvmrc` plus `engines.node` and `packageManager` (corepack) in
+      `web/package.json`.
+- [ ] Committed lockfile; CI installs with `npm ci` (or
+      `pnpm install --frozen-lockfile`), never `npm install`.
+- [ ] `web/.npmrc` with `ignore-scripts=true` and the registry pinned to
+      `https://registry.npmjs.org/`.
+- [ ] Build output (`web/dist/`) stays untracked (already in
+      `.gitignore`) unless a packaging decision says otherwise.
+
+Gates (hooks and a `Frontend lint` / `Frontend test` CI job pair):
+
+- [ ] `prettier --check` (or biome).
+- [ ] `eslint --max-warnings 0` with `typescript-eslint` strict and a
+      security plugin; ban `eval`, `new Function` and string timers.
+- [ ] `tsc --noEmit` with `"strict": true`.
+- [ ] `vitest` unit tests; `fast-check` property tests for the input
+      message encoder.
+- [ ] Min-version job: build on the lowest `engines.node`.
+
+Supply chain:
+
+- [ ] `npm audit --audit-level=moderate` (or `osv-scanner`) in the
+      `Supply chain audit` job and at pre-push.
+- [ ] `license-checker` allowlist compatible with AGPL-3.0-only.
+- [ ] `@cyclonedx/cyclonedx-npm` (pinned) added to `sbom.yml`.
+- [ ] Dependabot `npm` entry for `/web`.
+- [ ] CodeQL matrix gains `javascript-typescript`.
+- [ ] `registry.npmjs.org:443` added to harden-runner allowlists of the
+      jobs that install from npm, and nowhere else.
+
+Server-side:
+
+- [ ] Add every new job name (including `CodeQL (javascript-typescript)`)
+      to the branch protection contexts in
+      [REPO-SETUP.md](REPO-SETUP.md#step-3--enable-server-side-controls)
+      and to the live branch protection, in the same PR.
+
+Runtime (frontend-specific, enforced in code review and tests):
+
+- [ ] Strict Content-Security-Policy served by the backend (no inline
+      script, no remote origins); `Referrer-Policy: no-referrer`.
+- [ ] No third-party CDN assets; everything is bundled and served locally.
+- [ ] Pairing secrets never appear in URLs that are logged, and never in
+      `localStorage`.
 
 ## Phase 4 — Optional follow-ups (defer until you have a real consumer)
 
