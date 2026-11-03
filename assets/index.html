@@ -18,7 +18,7 @@
     <p>Enter the pairing code shown on the Linux host. This page requires a trusted HTTPS connection.</p>
     <form id="pair-form">
       <label for="pair-code">Pairing code</label>
-      <input id="pair-code" name="code" type="password" minlength="16" maxlength="256"
+      <input id="pair-code" name="code" type="text" inputmode="numeric" minlength="8" maxlength="9" placeholder="0000-0000"
              autocomplete="off" required>
       <button type="submit">Connect controller</button>
     </form>

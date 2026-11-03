@@ -114,14 +114,14 @@ HTTPS reverse proxy**, restrict the backend listener to the proxy, and set:
 ```sh
 export WEB_CONTROLLER_BIND='<proxy-accessible-bind-address>:<port>'
 export WEB_CONTROLLER_ORIGIN='https://<trusted-hostname>'
-export WEB_CONTROLLER_PAIR_CODE="$(openssl rand -hex 16)"
+export WEB_CONTROLLER_PAIR_CODE="$(python3 -c 'import secrets; print(f"{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}")')"
 # Display this code to the operator locally; never save it in Git.
 printf '%s\n' "$WEB_CONTROLLER_PAIR_CODE"
 cargo run
 ```
 
 On a phone that can reach the trusted HTTPS origin, open the root page, enter
-the pairing code, and press Connect. The page presents touchscreen buttons,
+the eight-digit pairing code (with or without the hyphen), and press Connect. The page presents touchscreen buttons,
 dual analog sticks, and triggers. The virtual controller is created on
 connection; stale input is neutralized after a watchdog timeout, and the
 controller is destroyed when the WebSocket closes.

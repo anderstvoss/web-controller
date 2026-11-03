@@ -10,7 +10,7 @@ M1 is **single-client** and only provides the Xbox 360 *style* Linux evdev contr
 
 ## Trust and lifecycle
 
-- The operator provides a long random pairing code via runtime environment, never in repository files. The service requires an explicitly configured bind address and expected HTTPS origin; terminate TLS with a trusted, independently managed reverse proxy.
+- The operator provides a random eight-digit pairing code displayed as four digits, a hyphen, and four digits via runtime environment, never in repository files. The service requires an explicitly configured bind address and expected HTTPS origin; terminate TLS with a trusted, independently managed reverse proxy.
 - A same-origin POST exchanges the pairing code for an HttpOnly, Secure, SameSite=Strict session cookie. Reject missing/foreign origins and enforce a single live socket.
 - The only accepted WebSocket data is a versioned, bounded, validated full-state snapshot with a monotonically increasing sequence number; unknown fields and out-of-range floats are rejected. There is no client-controlled HID descriptor or realization selection.
 - WebSocket network handling never owns the controller. A dedicated worker owns `virtualgamepad`, updates its native controls, commits changed snapshots, and services the controller independently, including at idle.
@@ -45,7 +45,7 @@ Do not mark M1 consumer-validated until the last two gates have recorded host ev
 
 ## Deferred
 
-M2: QR code, short-lived one-time pairing tokens, multi-session assignment, reconnect grace, and packaged TLS onboarding. M3: IMU and DualSense. M4/M5: Wii MotionPlus and Ibex independent consumer gates.
+M2: QR onboarding, multi-session assignment, reconnect grace, and packaged TLS onboarding. The end target is pairing without manual code entry. M3: IMU and DualSense. M4/M5: Wii MotionPlus and Ibex independent consumer gates.
 
 ## Host acceptance evidence, 2026-11-03
 

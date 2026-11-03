@@ -32,7 +32,7 @@ use crate::{device::run_xbox_owner, input::parse_frame};
 #[derive(Clone)]
 struct ServiceState {
     origin: Arc<str>,
-    pair_code: Arc<str>,
+    pair_code: [u8; 8],
     access: Arc<Mutex<Access>>,
     active: Arc<AtomicBool>,
 }
@@ -79,6 +79,19 @@ fn token_matches(a: &str, b: &str) -> bool {
     a.as_bytes().ct_eq(b.as_bytes()).unwrap_u8() == 1
 }
 
+fn normalize_pair_code(code: &str) -> Option<[u8; 8]> {
+    let bytes = code.as_bytes();
+    let digits: [u8; 8] = if matches!(bytes, [_, _, _, _, b'-', _, _, _, _]) {
+        let mut digits = [0; 8];
+        digits[..4].copy_from_slice(&bytes[..4]);
+        digits[4..].copy_from_slice(&bytes[5..]);
+        digits
+    } else {
+        bytes.try_into().ok()?
+    };
+    digits.iter().all(u8::is_ascii_digit).then_some(digits)
+}
+
 fn random_session() -> String {
     let bytes: [u8; 32] = random();
     let mut output = String::with_capacity(64);
@@ -96,9 +109,6 @@ async fn pair(
     if !origin_matches(&headers, &state.origin) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    if request.code.len() > 256 {
-        return StatusCode::BAD_REQUEST.into_response();
-    }
 
     let mut access = state.access.lock().unwrap_or_else(PoisonError::into_inner);
     if access.window_started.elapsed() >= Duration::from_secs(60) {
@@ -108,7 +118,9 @@ async fn pair(
     if access.failures >= 5 {
         return StatusCode::TOO_MANY_REQUESTS.into_response();
     }
-    if !token_matches(&request.code, &state.pair_code) {
+    if normalize_pair_code(&request.code)
+        .is_none_or(|digits| digits.ct_eq(&state.pair_code).unwrap_u8() != 1)
+    {
         access.failures += 1;
         return StatusCode::UNAUTHORIZED.into_response();
     }
@@ -259,13 +271,13 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if !origin.starts_with("https://") || origin.len() < 12 {
         return Err("WEB_CONTROLLER_ORIGIN must be an HTTPS origin".into());
     }
-    if pair_code.len() < 16 {
-        return Err("WEB_CONTROLLER_PAIR_CODE must be at least 16 characters".into());
-    }
+    let pair_code = normalize_pair_code(&pair_code).ok_or(
+        "WEB_CONTROLLER_PAIR_CODE must contain eight ASCII digits, optionally grouped 4-4",
+    )?;
 
     let state = ServiceState {
         origin: Arc::from(origin),
-        pair_code: Arc::from(pair_code),
+        pair_code,
         access: Arc::new(Mutex::new(Access::default())),
         active: Arc::new(AtomicBool::new(false)),
     };
@@ -289,7 +301,38 @@ mod tests {
 
     use axum::http::{HeaderMap, HeaderValue, header};
 
-    use super::{SocketSlot, cookie_session, origin_matches, random_session, token_matches};
+    use proptest::prelude::*;
+
+    use super::{
+        SocketSlot, cookie_session, normalize_pair_code, origin_matches, random_session,
+        token_matches,
+    };
+
+    proptest! {
+        #[test]
+        fn pair_code_accepts_grouped_and_plain_digits(first in 0..10_000u16, last in 0..10_000u16) {
+            let plain = format!("{first:04}{last:04}");
+            let grouped = format!("{first:04}-{last:04}");
+            let normalized = normalize_pair_code(&plain).unwrap();
+            prop_assert_eq!(normalized.as_slice(), plain.as_bytes());
+            prop_assert_eq!(normalize_pair_code(&grouped), normalize_pair_code(&plain));
+            let padded = format!(" {grouped}");
+            prop_assert!(normalize_pair_code(&padded).is_none());
+        }
+    }
+
+    #[test]
+    fn rejects_non_ascii_and_misplaced_separators() {
+        for invalid in [
+            "１２３４５６７８",
+            "123-45678",
+            "1234 5678",
+            "1234567",
+            "1234567a",
+        ] {
+            assert!(normalize_pair_code(invalid).is_none());
+        }
+    }
 
     #[test]
     fn dropped_upgrade_releases_socket_slot() {
