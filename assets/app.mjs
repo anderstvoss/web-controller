@@ -10,13 +10,19 @@ const errorText = document.querySelector("#pair-error");
 let socket = null;
 let intervalId = null;
 let sequence = 0;
+let ready = false;
+let connecting = false;
+let reconnectUntil = null;
+let retryTimer;
+const joinButton = document.querySelector("#request-join");
+const endButton = document.querySelector("#end-session");
 
 function setStatus(message) {
   status.textContent = message;
 }
 
 function sendSnapshot() {
-  if (!socket || socket.readyState !== WebSocket.OPEN || socket.bufferedAmount > 1024) {
+  if (!ready || !socket || socket.readyState !== WebSocket.OPEN || socket.bufferedAmount > 1024) {
     return;
   }
   sequence += 1;
@@ -59,7 +65,7 @@ function updateStick(element, event) {
 }
 
 function onPointerDown(event) {
-  if (!socket || socket.readyState !== WebSocket.OPEN) {
+  if (!ready || !socket || socket.readyState !== WebSocket.OPEN) {
     return;
   }
   const element = event.currentTarget;
@@ -119,54 +125,149 @@ for (const element of document.querySelectorAll("[data-button], [data-trigger], 
   element.addEventListener("contextmenu", (event) => event.preventDefault());
 }
 
+function showPairing(message) {
+  ready = false;
+  pairView.classList.remove("hidden");
+  controller.classList.add("hidden");
+  setStatus(message);
+}
+
 function connect() {
+  if (socket) return;
   const uri = new URL("/input", window.location.href);
   uri.protocol = "wss:";
-  socket = new WebSocket(uri);
-  socket.addEventListener("open", () => {
+  const connection = new WebSocket(uri);
+  socket = connection;
+  connection.addEventListener("message", ({ data }) => {
+    if (data !== "ready") {
+      errorText.textContent = "Host failed to create controller";
+      return;
+    }
+    ready = true;
+    reconnectUntil = null;
+    sequence = 0;
     setStatus("Controller connected");
     pairView.classList.add("hidden");
     controller.classList.remove("hidden");
-    sequence = 0;
     intervalId = window.setInterval(sendSnapshot, 1000 / 60);
     sendSnapshot();
   });
-  socket.addEventListener("message", () => {
-    setStatus("Host failed to create controller");
-    socket.close();
-  });
-  socket.addEventListener("close", () => {
+  connection.addEventListener("close", () => {
+    socket = null;
+    ready = false;
     window.clearInterval(intervalId);
     resetControls();
-    pairView.classList.remove("hidden");
-    controller.classList.add("hidden");
-    setStatus("Disconnected");
+    if (reconnectUntil === null) reconnectUntil = performance.now() + 15000;
+    showPairing("Reconnecting…");
+    retryTimer = window.setTimeout(resume, 500);
   });
-  socket.addEventListener("error", () => setStatus("Network error"));
 }
 
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  errorText.textContent = "";
-  const codeInput = document.querySelector("#pair-code");
-  const code = codeInput.value;
-  try {
-    const response = await fetch("/pair", {
-      method: "POST",
-      credentials: "same-origin",
+async function post(path, body) {
+  return fetch(path, {
+    method: "POST",
+    credentials: "same-origin",
+    cache: "no-store",
+    ...(body === undefined ? {} : {
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ code }),
-    });
-    if (!response.ok) {
-      throw new Error(`Pairing rejected (HTTP ${response.status})`);
+      body: JSON.stringify(body),
+    }),
+  });
+}
+
+async function resume() {
+  if (connecting || socket) return;
+  connecting = true;
+  try {
+    const response = await post("/session");
+    if (response.status === 204) {
+      if (reconnectUntil === null || performance.now() < reconnectUntil) {
+        connect();
+        return;
+      }
+    } else if (response.status === 401) {
+      reconnectUntil = null;
+      showPairing("Ready to pair");
+      return;
     }
-    codeInput.value = "";
-    setStatus("Connecting");
+  } catch {
+    // Retry briefly when Wi-Fi returns.
+  } finally {
+    connecting = false;
+  }
+  if (reconnectUntil !== null && performance.now() < reconnectUntil) {
+    retryTimer = window.setTimeout(resume, 500);
+  } else {
+    reconnectUntil = null;
+    showPairing("Disconnected");
+  }
+}
+
+async function pair(code) {
+  const response = await post("/pair", { code });
+  if (response.status !== 204) throw new Error(`Pairing rejected (HTTP ${response.status})`);
+}
+
+async function pairAction(action) {
+  if (connecting || socket) return;
+  window.clearTimeout(retryTimer);
+  reconnectUntil = null;
+  connecting = true;
+  errorText.textContent = "";
+  try {
+    await action();
     connect();
   } catch (error) {
     errorText.textContent = error instanceof Error ? error.message : "Pairing failed";
+  } finally {
+    connecting = false;
+  }
+}
+
+form.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const input = document.querySelector("#pair-code");
+  void pairAction(async () => {
+    await pair(input.value);
+    input.value = "";
+  });
+});
+
+joinButton.addEventListener("click", () => {
+  void pairAction(async () => {
+    const request = await post("/join/request");
+    if (request.status !== 202) throw new Error("Host cannot accept more join requests");
+    setStatus(`Ask the host to approve request ${await request.text()}`);
+    const deadline = performance.now() + 120000;
+    while (performance.now() < deadline) {
+      await new Promise((resolve) => window.setTimeout(resolve, 1000));
+      const result = await post("/join/claim");
+      if (result.status === 204) return;
+      if (result.status === 401) break;
+      if (result.status !== 202 && result.status !== 409) break;
+    }
+    showPairing("Ready to pair");
+    throw new Error("Join request expired or was rejected");
+  });
+});
+
+endButton.addEventListener("click", async () => {
+  try {
+    const response = await post("/session/end");
+    if (response.status !== 204) throw new Error("End failed");
+    socket?.close();
+  } catch {
+    setStatus("Could not end the session");
   }
 });
+
+const invite = new URLSearchParams(window.location.hash.slice(1)).get("invite");
+if (window.location.hash) window.history.replaceState(null, "", window.location.pathname);
+if (invite) {
+  void pairAction(() => pair(invite));
+} else {
+  void resume();
+}
 
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) resetControls();

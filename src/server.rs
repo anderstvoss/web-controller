@@ -1,11 +1,7 @@
-//! HTTPS-reverse-proxy-facing, origin-restricted single-session web controller.
+//! HTTPS-reverse-proxy-facing, origin-restricted LAN controller service.
 use std::{
     env,
-    fmt::Write as _,
-    sync::{
-        Arc, Mutex, PoisonError,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -15,42 +11,28 @@ use axum::{
         DefaultBodyLimit, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
-    http::{HeaderMap, StatusCode, header},
+    http::{HeaderMap, StatusCode, Uri, header},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
 };
-use rand::random;
 use serde::Deserialize;
-use subtle::ConstantTimeEq;
-use tokio::{
-    net::TcpListener,
-    sync::{oneshot, watch},
+use tokio::net::TcpListener;
+
+use crate::{
+    input::parse_frame,
+    operator,
+    sessions::{Error, Sessions, SocketLease},
 };
 
-use crate::{device::run_xbox_owner, input::parse_frame};
+const SESSION: &str = "wc_session";
+const REQUEST: &str = "wc_request";
+const FRAME_RATE: f64 = 240.0;
+const BURST: f64 = 48.0;
 
 #[derive(Clone)]
 struct ServiceState {
     origin: Arc<str>,
-    pair_code: [u8; 8],
-    access: Arc<Mutex<Access>>,
-    active: Arc<AtomicBool>,
-}
-
-struct Access {
-    session: Option<String>,
-    failures: u8,
-    window_started: Instant,
-}
-
-impl Default for Access {
-    fn default() -> Self {
-        Self {
-            session: None,
-            failures: 0,
-            window_started: Instant::now(),
-        }
-    }
+    sessions: Sessions,
 }
 
 #[derive(Deserialize)]
@@ -60,45 +42,43 @@ struct PairRequest {
 }
 
 fn origin_matches(headers: &HeaderMap, expected: &str) -> bool {
-    headers
-        .get(header::ORIGIN)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|origin| origin == expected)
+    let mut origins = headers.get_all(header::ORIGIN).iter();
+    origins.next().and_then(|value| value.to_str().ok()) == Some(expected)
+        && origins.next().is_none()
 }
 
-fn cookie_session(headers: &HeaderMap) -> Option<&str> {
+fn cookie<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     headers
         .get(header::COOKIE)?
         .to_str()
         .ok()?
         .split(';')
-        .find_map(|part| part.trim().strip_prefix("wc_session="))
+        .find_map(|part| {
+            let (key, value) = part.trim().split_once('=')?;
+            (key == name).then_some(value)
+        })
 }
 
-fn token_matches(a: &str, b: &str) -> bool {
-    a.as_bytes().ct_eq(b.as_bytes()).unwrap_u8() == 1
+fn set_cookie(name: &str, value: &str, expiry: &str) -> String {
+    format!("{name}={value}; HttpOnly; Secure; SameSite=Strict; Path=/{expiry}")
 }
 
-fn normalize_pair_code(code: &str) -> Option<[u8; 8]> {
-    let bytes = code.as_bytes();
-    let digits: [u8; 8] = if matches!(bytes, [_, _, _, _, b'-', _, _, _, _]) {
-        let mut digits = [0; 8];
-        digits[..4].copy_from_slice(&bytes[..4]);
-        digits[4..].copy_from_slice(&bytes[5..]);
-        digits
-    } else {
-        bytes.try_into().ok()?
-    };
-    digits.iter().all(u8::is_ascii_digit).then_some(digits)
-}
-
-fn random_session() -> String {
-    let bytes: [u8; 32] = random();
-    let mut output = String::with_capacity(64);
-    for byte in bytes {
-        let _ = write!(output, "{byte:02x}");
+fn failure(error: Error) -> Response {
+    match error {
+        Error::Unauthorized => StatusCode::UNAUTHORIZED,
+        Error::Pending => StatusCode::ACCEPTED,
+        Error::Busy => StatusCode::CONFLICT,
+        Error::Limited => StatusCode::TOO_MANY_REQUESTS,
     }
-    output
+    .into_response()
+}
+
+fn authorized(token: &str) -> Response {
+    (
+        StatusCode::NO_CONTENT,
+        [(header::SET_COOKIE, set_cookie(SESSION, token, ""))],
+    )
+        .into_response()
 }
 
 async fn pair(
@@ -109,30 +89,82 @@ async fn pair(
     if !origin_matches(&headers, &state.origin) {
         return StatusCode::FORBIDDEN.into_response();
     }
+    let mut registry = state.sessions.lock();
+    registry.expire();
+    if cookie(&headers, SESSION).is_some_and(|token| registry.has_session(token)) {
+        return StatusCode::CONFLICT.into_response();
+    }
+    registry
+        .redeem(&request.code)
+        .map_or_else(failure, |token| authorized(&token))
+}
 
-    let mut access = state.access.lock().unwrap_or_else(PoisonError::into_inner);
-    if access.window_started.elapsed() >= Duration::from_secs(60) {
-        access.window_started = Instant::now();
-        access.failures = 0;
+async fn request_join(State(state): State<ServiceState>, headers: HeaderMap) -> Response {
+    if !origin_matches(&headers, &state.origin) {
+        return StatusCode::FORBIDDEN.into_response();
     }
-    if access.failures >= 5 {
-        return StatusCode::TOO_MANY_REQUESTS.into_response();
+    let mut registry = state.sessions.lock();
+    registry.expire();
+    if cookie(&headers, SESSION).is_some_and(|token| registry.has_session(token)) {
+        return StatusCode::CONFLICT.into_response();
     }
-    if normalize_pair_code(&request.code)
-        .is_none_or(|digits| digits.ct_eq(&state.pair_code).unwrap_u8() != 1)
-    {
-        access.failures += 1;
+    match registry.request(cookie(&headers, REQUEST)) {
+        Ok((id, token)) => (
+            StatusCode::ACCEPTED,
+            [
+                (
+                    header::SET_COOKIE,
+                    set_cookie(REQUEST, &token, "; Max-Age=120"),
+                ),
+                (header::CACHE_CONTROL, "no-store".into()),
+            ],
+            id.to_string(),
+        )
+            .into_response(),
+        Err(error) => failure(error),
+    }
+}
+
+async fn claim_join(State(state): State<ServiceState>, headers: HeaderMap) -> Response {
+    if !origin_matches(&headers, &state.origin) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let Some(token) = cookie(&headers, REQUEST) else {
         return StatusCode::UNAUTHORIZED.into_response();
+    };
+    let mut registry = state.sessions.lock();
+    registry.expire();
+    if cookie(&headers, SESSION).is_some_and(|token| registry.has_session(token)) {
+        return StatusCode::CONFLICT.into_response();
     }
-    access.failures = 0;
-    let token = random_session();
-    access.session = Some(token.clone());
+    registry
+        .claim(token)
+        .map_or_else(failure, |token| authorized(&token))
+}
+
+async fn session_status(State(state): State<ServiceState>, headers: HeaderMap) -> StatusCode {
+    if !origin_matches(&headers, &state.origin) {
+        return StatusCode::FORBIDDEN;
+    }
+    let mut registry = state.sessions.lock();
+    registry.expire();
+    if cookie(&headers, SESSION).is_some_and(|token| registry.has_session(token)) {
+        StatusCode::NO_CONTENT
+    } else {
+        StatusCode::UNAUTHORIZED
+    }
+}
+
+async fn end_session(State(state): State<ServiceState>, headers: HeaderMap) -> Response {
+    if !origin_matches(&headers, &state.origin) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    if let Some(token) = cookie(&headers, SESSION) {
+        state.sessions.lock().end_token(token);
+    }
     (
         StatusCode::NO_CONTENT,
-        [(
-            header::SET_COOKIE,
-            format!("wc_session={token}; HttpOnly; Secure; SameSite=Strict; Path=/"),
-        )],
+        [(header::SET_COOKIE, set_cookie(SESSION, "", "; Max-Age=0"))],
     )
         .into_response()
 }
@@ -145,80 +177,80 @@ async fn upgrade(
     if !origin_matches(&headers, &state.origin) {
         return StatusCode::FORBIDDEN.into_response();
     }
-    let authorized = {
-        let access = state.access.lock().unwrap_or_else(PoisonError::into_inner);
-        access
-            .session
-            .as_deref()
-            .zip(cookie_session(&headers))
-            .is_some_and(|(expected, provided)| token_matches(expected, provided))
-    };
-    if !authorized {
+    let Some(token) = cookie(&headers, SESSION) else {
         return StatusCode::UNAUTHORIZED.into_response();
-    }
-    let Some(slot) = SocketSlot::acquire(state.active) else {
-        return StatusCode::CONFLICT.into_response();
     };
-    ws.max_frame_size(512)
-        .max_message_size(512)
-        .on_upgrade(move |socket| serve_socket(socket, slot))
-        .into_response()
+    match state.sessions.attach(token) {
+        Ok(lease) => ws
+            .max_frame_size(512)
+            .max_message_size(512)
+            .on_upgrade(move |socket| serve_socket(socket, lease))
+            .into_response(),
+        Err(error) => failure(error),
+    }
 }
 
-struct SocketSlot(Arc<AtomicBool>);
+async fn serve_socket(mut socket: WebSocket, mut lease: SocketLease) {
+    let mut cancelled = lease.cancelled.clone();
+    let Some(mut ready) = lease.start() else {
+        return;
+    };
+    let started = tokio::select! {
+        result = ready.wait_for(|ready| *ready) => result.is_ok(),
+        _ = cancelled.changed() => false,
+    };
+    if !started {
+        let _ = tokio::time::timeout(
+            Duration::from_secs(1),
+            socket.send(Message::Text("device unavailable".into())),
+        )
+        .await;
+        return;
+    }
 
-impl SocketSlot {
-    fn acquire(active: Arc<AtomicBool>) -> Option<Self> {
-        if active.swap(true, Ordering::AcqRel) {
-            return None;
+    if !matches!(
+        tokio::time::timeout(
+            Duration::from_secs(1),
+            socket.send(Message::Text("ready".into()))
+        )
+        .await,
+        Ok(Ok(()))
+    ) {
+        return;
+    }
+    let mut sequence = None;
+    let mut budget = BURST;
+    let mut last = Instant::now();
+    loop {
+        let message = tokio::select! {
+            biased;
+            _ = cancelled.changed() => break,
+            result = tokio::time::timeout(Duration::from_secs(5), socket.recv()) => result.ok().flatten(),
+        };
+        let Some(Ok(message)) = message else {
+            break;
+        };
+        let now = Instant::now();
+        budget = (budget + now.duration_since(last).as_secs_f64() * FRAME_RATE).min(BURST);
+        last = now;
+        if budget < 1.0 {
+            break;
         }
-        Some(Self(active))
-    }
-}
-
-impl Drop for SocketSlot {
-    fn drop(&mut self) {
-        self.0.store(false, Ordering::Release);
-    }
-}
-
-async fn serve_socket(mut socket: WebSocket, slot: SocketSlot) {
-    let (tx, rx) = watch::channel(None);
-    let (startup_tx, startup_rx) = oneshot::channel();
-    let worker = tokio::task::spawn_blocking(move || {
-        let _slot = slot;
-        run_xbox_owner(rx, startup_tx)
-    });
-
-    if matches!(startup_rx.await, Ok(Ok(()))) {
-        let mut latest_sequence = None;
-        while let Some(message) = socket.recv().await {
-            match message {
-                Ok(Message::Text(raw)) => {
-                    let Ok(frame) = parse_frame(raw.as_bytes()) else {
-                        break;
-                    };
-                    if latest_sequence.is_some_and(|old| frame.seq <= old) {
-                        break;
-                    }
-                    latest_sequence = Some(frame.seq);
-                    tx.send_replace(Some(frame));
+        budget -= 1.0;
+        match message {
+            Message::Text(raw) => {
+                let Ok(frame) = parse_frame(raw.as_bytes()) else {
+                    break;
+                };
+                if sequence.is_some_and(|old| frame.seq <= old) {
+                    break;
                 }
-                Ok(Message::Close(_) | Message::Binary(_)) | Err(_) => break,
-                Ok(_) => {}
+                sequence = Some(frame.seq);
+                lease.publish(frame);
             }
+            Message::Close(_) | Message::Binary(_) => break,
+            _ => {}
         }
-    } else {
-        let _ = socket
-            .send(Message::Text("virtual controller creation failed".into()))
-            .await;
-    }
-
-    drop(tx);
-    match worker.await {
-        Ok(Ok(())) => {}
-        Ok(Err(error)) => eprintln!("virtual controller closed with error: {error}"),
-        Err(error) => eprintln!("virtual controller task failed: {error}"),
     }
 }
 
@@ -259,27 +291,53 @@ async fn styles() -> impl IntoResponse {
     )
 }
 
-/// Start the M1 service with explicitly configured address, HTTPS origin and
-/// operator pairing code. TLS is terminated by a trusted external proxy.
+async fn shutdown(terminal: tokio::sync::oneshot::Receiver<()>) {
+    #[cfg(unix)]
+    {
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("install SIGTERM listener");
+        tokio::select! {
+            _ = terminal => {}
+            _ = tokio::signal::ctrl_c() => {}
+            _ = terminate.recv() => {}
+        }
+    }
+    #[cfg(not(unix))]
+    tokio::select! {
+        _ = terminal => {}
+        _ = tokio::signal::ctrl_c() => {}
+    }
+}
+
+/// Start the service with an explicitly configured bind address and HTTPS origin.
 ///
 /// # Errors
 /// Missing or invalid configuration and bind/server failures are fatal.
 pub async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let bind = env::var("WEB_CONTROLLER_BIND")?;
     let origin = env::var("WEB_CONTROLLER_ORIGIN")?;
-    let pair_code = env::var("WEB_CONTROLLER_PAIR_CODE")?;
-    if !origin.starts_with("https://") || origin.len() < 12 {
-        return Err("WEB_CONTROLLER_ORIGIN must be an HTTPS origin".into());
+    let uri: Uri = origin.parse()?;
+    if uri.scheme_str() != Some("https")
+        || uri.authority().is_none()
+        || uri
+            .path_and_query()
+            .is_some_and(|part| part.as_str() != "/")
+        || origin.ends_with('/')
+        || origin.contains(['#', '?'])
+        || uri
+            .authority()
+            .is_some_and(|part| part.as_str().contains('@'))
+    {
+        return Err(
+            "WEB_CONTROLLER_ORIGIN must be an HTTPS origin without a trailing slash".into(),
+        );
     }
-    let pair_code = normalize_pair_code(&pair_code).ok_or(
-        "WEB_CONTROLLER_PAIR_CODE must contain eight ASCII digits, optionally grouped 4-4",
-    )?;
-
+    let listener = TcpListener::bind(bind).await?;
+    let sessions = Sessions::default();
     let state = ServiceState {
-        origin: Arc::from(origin),
-        pair_code,
-        access: Arc::new(Mutex::new(Access::default())),
-        active: Arc::new(AtomicBool::new(false)),
+        origin: Arc::from(origin.as_str()),
+        sessions: sessions.clone(),
     };
     let app = Router::new()
         .route("/", get(index))
@@ -287,90 +345,57 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .route("/input-model.mjs", get(model_js))
         .route("/style.css", get(styles))
         .route("/pair", post(pair))
+        .route("/join/request", post(request_join))
+        .route("/join/claim", post(claim_join))
+        .route("/session", post(session_status))
+        .route("/session/end", post(end_session))
         .route("/input", get(upgrade))
         .layer(DefaultBodyLimit::max(512))
         .with_state(state);
-    let listener = TcpListener::bind(bind).await?;
-    axum::serve(listener, app).await?;
+    let terminal = operator::start(sessions.clone(), origin);
+    let sweep_sessions = sessions.clone();
+    let sweep = tokio::spawn(async move {
+        let mut tick = tokio::time::interval(Duration::from_millis(100));
+        loop {
+            tick.tick().await;
+            sweep_sessions.lock().expire();
+        }
+    });
+    let stop_sessions = sessions.clone();
+    let result = axum::serve(listener, app)
+        .with_graceful_shutdown(async move {
+            shutdown(terminal).await;
+            stop_sessions.lock().shutdown();
+        })
+        .await;
+    sweep.abort();
+    sessions.lock().shutdown();
+    while !sessions.lock().drained() {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    result?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, atomic::AtomicBool};
-
+    use super::{cookie, origin_matches};
     use axum::http::{HeaderMap, HeaderValue, header};
 
-    use proptest::prelude::*;
-
-    use super::{
-        SocketSlot, cookie_session, normalize_pair_code, origin_matches, random_session,
-        token_matches,
-    };
-
-    proptest! {
-        #[test]
-        fn pair_code_accepts_grouped_and_plain_digits(first in 0..10_000u16, last in 0..10_000u16) {
-            let plain = format!("{first:04}{last:04}");
-            let grouped = format!("{first:04}-{last:04}");
-            let normalized = normalize_pair_code(&plain).unwrap();
-            prop_assert_eq!(normalized.as_slice(), plain.as_bytes());
-            prop_assert_eq!(normalize_pair_code(&grouped), normalize_pair_code(&plain));
-            let padded = format!(" {grouped}");
-            prop_assert!(normalize_pair_code(&padded).is_none());
-        }
-    }
-
     #[test]
-    fn rejects_non_ascii_and_misplaced_separators() {
-        for invalid in [
-            "１２３４５６７８",
-            "123-45678",
-            "1234 5678",
-            "1234567",
-            "1234567a",
-        ] {
-            assert!(normalize_pair_code(invalid).is_none());
-        }
-    }
-
-    #[test]
-    fn dropped_upgrade_releases_socket_slot() {
-        let active = Arc::new(AtomicBool::new(false));
-        let slot = SocketSlot::acquire(Arc::clone(&active)).unwrap();
-        assert!(SocketSlot::acquire(Arc::clone(&active)).is_none());
-        drop(slot);
-        assert!(SocketSlot::acquire(active).is_some());
-    }
-
-    #[test]
-    fn token_matching_and_cookie_parsing() {
-        assert!(token_matches("a", "a"));
-        assert!(!token_matches("a", "b"));
-        assert!(!token_matches("a", "aa"));
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            header::COOKIE,
-            HeaderValue::from_static("other=1; wc_session=abc"),
-        );
-        assert_eq!(cookie_session(&headers), Some("abc"));
-    }
-
-    #[test]
-    fn origin_is_exact_not_prefix_based() {
+    fn exact_origin_and_cookie_name() {
         let mut headers = HeaderMap::new();
         headers.insert(
             header::ORIGIN,
             HeaderValue::from_static("https://example.test"),
         );
+        headers.insert(
+            header::COOKIE,
+            HeaderValue::from_static("other=1; wc_session=abc"),
+        );
         assert!(origin_matches(&headers, "https://example.test"));
         assert!(!origin_matches(&headers, "https://example.test.evil"));
-    }
-
-    #[test]
-    fn randomized_sessions_are_not_identical() {
-        let first = random_session();
-        assert_eq!(first.len(), 64);
-        assert_ne!(first, random_session());
+        assert_eq!(cookie(&headers, "wc_session"), Some("abc"));
+        assert_eq!(cookie(&headers, "session"), None);
     }
 }

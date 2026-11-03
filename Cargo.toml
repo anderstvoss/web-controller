@@ -17,7 +17,7 @@ rand = "0.9.2"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.145"
 subtle = "2.6.1"
-tokio = { version = "1.53.3", features = ["macros", "rt-multi-thread", "net", "sync", "time"] }
+tokio = { version = "1.53.3", features = ["macros", "rt-multi-thread", "net", "signal", "sync", "time"] }
 virtualgamepad = { version = "=0.1.0", git = "https://github.com/anderstvoss/virtualgamepad", rev = "9e00a063586568a059ca5e91976c5e829c20fbae" }
 
 [dev-dependencies]
