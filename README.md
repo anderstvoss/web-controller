@@ -1,5 +1,7 @@
 # web-controller
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/anderstvoss/web-controller/badge)](https://scorecard.dev/viewer/?uri=github.com/anderstvoss/web-controller)
+
 A Linux service that turns a smartphone into a local game controller with
 no native app. The phone opens an HTTPS page served by the Linux host,
 pairs to a session, and sends touchscreen and (where the browser allows)
