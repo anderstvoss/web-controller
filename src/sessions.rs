@@ -45,9 +45,10 @@ pub(crate) fn pin(code: &str) -> Option<String> {
 }
 
 struct Invite {
+    id: u64,
     token: String,
     pin: String,
-    expires: Instant,
+    expires: Option<Instant>,
 }
 
 struct Request {
@@ -136,7 +137,8 @@ impl Registry {
 
     pub(crate) fn expire(&mut self) {
         let now = Instant::now();
-        self.invites.retain(|invite| invite.expires > now);
+        self.invites
+            .retain(|invite| invite.expires.is_none_or(|expiry| expiry > now));
         self.requests.retain(|_, request| request.expires > now);
         self.sessions.retain(|_, session| {
             if session.closing {
@@ -151,7 +153,7 @@ impl Registry {
         });
     }
 
-    pub(crate) fn invite(&mut self) -> Result<(String, String), Error> {
+    pub(crate) fn invite(&mut self, reusable: bool) -> Result<(u64, String, String), Error> {
         self.expire();
         if self.stopping || self.invites.len() >= MAX_PENDING {
             return Err(Error::Busy);
@@ -164,12 +166,14 @@ impl Registry {
         };
         let token = secret();
         let display_pin = format!("{}-{}", &digits[..4], &digits[4..]);
+        let id = self.id();
         self.invites.push(Invite {
+            id,
             token: token.clone(),
             pin: digits,
-            expires: Instant::now() + AUTH_TTL,
+            expires: (!reusable).then(|| Instant::now() + AUTH_TTL),
         });
-        Ok((token, display_pin))
+        Ok((id, token, display_pin))
     }
 
     fn capacity(&self) -> Result<(), Error> {
@@ -218,8 +222,17 @@ impl Registry {
             return Err(Error::Unauthorized);
         };
         self.capacity()?;
-        self.invites.swap_remove(index);
+        if self.invites[index].expires.is_some() {
+            self.invites.swap_remove(index);
+        }
         Ok(self.authorize())
+    }
+
+    pub(crate) fn revoke_invite(&mut self, id: u64) -> bool {
+        self.expire();
+        let length = self.invites.len();
+        self.invites.retain(|invite| invite.id != id);
+        length != self.invites.len()
     }
 
     pub(crate) fn request(&mut self, cookie: Option<&str>) -> Result<(u64, String), Error> {
@@ -318,6 +331,18 @@ impl Registry {
     pub(crate) fn describe(&mut self) -> String {
         self.expire();
         let mut output = String::new();
+        for invite in &self.invites {
+            let expiry = invite.expires.map_or_else(
+                || "until revoked".into(),
+                |deadline| {
+                    format!(
+                        "{}s",
+                        deadline.saturating_duration_since(Instant::now()).as_secs()
+                    )
+                },
+            );
+            let _ = writeln!(output, "invite {}: expiry {expiry}", invite.id);
+        }
         for (id, request) in &self.requests {
             let status = if request.approved {
                 "approved"
@@ -486,21 +511,31 @@ mod tests {
     #[test]
     fn invite_is_single_use_across_pin_and_qr() {
         let mut registry = Registry::default();
-        let (qr, pin) = registry.invite().unwrap();
+        let (_, qr, pin) = registry.invite(false).unwrap();
         assert!(registry.redeem(&pin).is_ok());
         assert_eq!(registry.redeem(&qr), Err(Error::Unauthorized));
-        let (qr, pin) = registry.invite().unwrap();
+        let (_, qr, pin) = registry.invite(false).unwrap();
         assert!(registry.redeem(&qr).is_ok());
         assert_eq!(registry.redeem(&pin), Err(Error::Unauthorized));
-        let (qr, _) = registry.invite().unwrap();
-        registry.invites.last_mut().unwrap().expires = Instant::now();
+        let (_, qr, _) = registry.invite(false).unwrap();
+        registry.invites.last_mut().unwrap().expires = Some(Instant::now());
+        assert_eq!(registry.redeem(&qr), Err(Error::Unauthorized));
+    }
+
+    #[test]
+    fn reusable_invite_survives_redemption_until_revoked() {
+        let mut registry = Registry::default();
+        let (id, qr, pin) = registry.invite(true).unwrap();
+        assert!(registry.redeem(&qr).is_ok());
+        assert!(registry.redeem(&pin).is_ok());
+        assert!(registry.revoke_invite(id));
         assert_eq!(registry.redeem(&qr), Err(Error::Unauthorized));
     }
 
     #[test]
     fn redemption_is_atomic_and_capacity_preserves_unspent_invite() {
         let sessions = Sessions::default();
-        let (qr, _) = sessions.lock().invite().unwrap();
+        let (_, qr, _) = sessions.lock().invite(false).unwrap();
         std::thread::scope(|scope| {
             let a = scope.spawn(|| sessions.lock().redeem(&qr));
             let b = scope.spawn(|| sessions.lock().redeem(&qr));
@@ -510,7 +545,7 @@ mod tests {
         for _ in 1..MAX_SESSIONS {
             registry.authorize();
         }
-        let (qr, _) = registry.invite().unwrap();
+        let (_, qr, _) = registry.invite(false).unwrap();
         assert_eq!(registry.redeem(&qr), Err(Error::Busy));
         let id = *registry.sessions.keys().next().unwrap();
         assert!(registry.end(id));

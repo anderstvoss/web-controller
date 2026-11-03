@@ -124,7 +124,8 @@ Run from the repository root, or set `WEB_CONTROLLER_ASSET_DIR` to the
 built asset directory. The daemon checks for the required assets on startup.
 
 Keep the terminal open. Type `invite` for a QR and eight-digit PIN that expire
-in two minutes. A phone can also open the LAN URL and choose **Request to
+in two minutes. For supervised LAN testing, `invite reusable` creates a QR
+and PIN valid until `revoke ID` or service shutdown. A phone can also open the LAN URL and choose **Request to
 join**. Compare the request ID shown on the phone with `list` in the terminal,
 then type `approve ID` or `reject ID`. Type `end ID` to remove a session or
 `quit` to shut down the service and remove all devices.
