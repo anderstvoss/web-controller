@@ -1,6 +1,6 @@
 # M1: single-phone Xbox 360-style controller (implementation record)
 
-Status: implementation candidate; consumer validation and required build gates pending. This file is subordinate to [the repository handoff](repository-handoff.md) and `AGENTS.md`.
+Status: implemented and host-enumerated; SDL joystick input verified with a synthetic client. Mobile browser acceptance is pending. This file is subordinate to [the repository handoff](repository-handoff.md) and `AGENTS.md`.
 
 ## Minimum vertical slice
 
@@ -30,12 +30,12 @@ The protocol is intentionally not a cross-controller or IUCM schema. Future cont
 
 | Gate | Expected result | Evidence status |
 |---|---|---|
-| Parser / ranges / unknown fields / malformed shapes | Unit + property tests with no device | Unverified until checks run |
+| Parser / ranges / unknown fields / malformed shapes | Unit + property tests with no device | Passed locally |
 | Frontend multi-touch, release on pointercancel/visibilitychange, analog clamping | Automated browser tests or mobile inspection | Pending |
-| HTTPS reverse-proxy and session cookie | Only trusted origin can authenticate | Pending host acceptance |
-| Virtual controller creation/cleanup | uinput device disappears on disconnect | Pending Linux host |
-| Native mapping | Correct evdev keys, d-pad, both sticks/triggers | Pending evdev/SDL consumer |
-| Real application | SDL/game sees inputs and releases | Pending host acceptance |
+| HTTPS reverse-proxy and session cookie | Only trusted origin can authenticate | See host evidence below |
+| Virtual controller creation/cleanup | uinput device disappears on disconnect | Passed in local host probe |
+| Native mapping | Correct evdev keys, d-pad, both sticks/triggers | Passed in SDL joystick probe |
+| Real application | SDL/game sees inputs and releases | See host evidence below |
 
 Do not mark M1 consumer-validated until the last two gates have recorded host evidence. Do not commit local TLS material, credentials, host addresses, or raw traffic.
 
@@ -46,3 +46,25 @@ Do not mark M1 consumer-validated until the last two gates have recorded host ev
 ## Deferred
 
 M2: QR code, short-lived one-time pairing tokens, multi-session assignment, reconnect grace, and packaged TLS onboarding. M3: IMU and DualSense. M4/M5: Wii MotionPlus and Ibex independent consumer gates.
+
+## Host acceptance evidence, 2026-11-03
+
+A local synthetic client tested the M1 daemon through a TLS reverse proxy on
+Debian 13 arm64, Linux 6.12.113, and SDL 2.32.4 (Debian package
+`2.32.4+dfsg-1`). The daemon ran as an unprivileged user with existing
+uinput access. The client verified the temporary test certificate and used
+masked WebSocket frames with generated input snapshots.
+
+- HTTPS pairing rejected a foreign Origin and accepted the configured Origin.
+  The session cookie carried Secure, HttpOnly, and SameSite=Strict.
+  WSS rejected an invalid cookie and a foreign Origin.
+- **Host-enumerated** via uinput. Each of two authenticated connections
+  added one evdev node, and closing each connection removed that node.
+- **Consumer-validated in SDL's joystick API with synthetic input.** SDL
+  observed all 11 buttons and all four D-pad directions individually, plus
+  simultaneous face buttons, both stick pairs, and both triggers.
+  After 360 ms without frames, SDL read the initial neutral state.
+- Mobile browser certificate trust, cookie handling, multi-touch,
+  pointer cancellation, visibility changes, and browser input rate and jitter
+  still need a phone run. This probe sampled SDL state after each input and
+  did not measure latency.

@@ -1,10 +1,6 @@
 //! Single-owner adapter to the upstream Xbox 360-style uinput controller.
 //! Network handlers may only publish full-state snapshots; they never own HID handles.
 use std::{
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
     thread,
     time::{Duration, Instant},
 };
@@ -43,11 +39,20 @@ const INPUT_TIMEOUT: Duration = Duration::from_millis(300);
 const MAX_SERVICE_WAIT: Duration = Duration::from_millis(2);
 
 #[must_use]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "clamped and rounded to the native axis range"
+)]
 pub fn stick_axis(value: f32) -> Xbox360Axis {
     Xbox360Axis::new((value.clamp(-1.0, 1.0) * 32767.0).round() as i16)
 }
 
 #[must_use]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "clamped and rounded to the unsigned trigger range"
+)]
 pub fn trigger_axis(value: f32) -> Xbox360Trigger {
     Xbox360Trigger::new((value.clamp(0.0, 1.0) * 255.0).round() as u8)
 }
@@ -81,6 +86,7 @@ fn apply(device: &mut Xbox360Controller, frame: &InputFrame) -> Result<(), Strin
     device.commit().map_err(|error| error.to_string())
 }
 
+#[expect(clippy::float_cmp, reason = "only identical snapshots are redundant")]
 fn same_controls(lhs: &InputFrame, rhs: &InputFrame) -> bool {
     lhs.buttons == rhs.buttons && lhs.sticks == rhs.sticks && lhs.triggers == rhs.triggers
 }
@@ -88,11 +94,12 @@ fn same_controls(lhs: &InputFrame, rhs: &InputFrame) -> bool {
 /// Execute on a dedicated blocking thread; no network IO or Tokio reactor work.
 ///
 /// Sends one startup result before any input is applied. Always closes the
-/// device on exit, including errors and timeout. The caller sets `active` false
-/// when the WebSocket ends and awaits the blocking worker.
+/// device on exit, including errors and closure of the snapshot channel.
+///
+/// # Errors
+/// Returns an error if creation, input application, servicing or neutralization fails.
 pub fn run_xbox_owner(
     mut input: watch::Receiver<Option<InputFrame>>,
-    active: Arc<AtomicBool>,
     startup: oneshot::Sender<Result<(), String>>,
 ) -> Result<(), String> {
     let mut device = match create_xbox360(CreationOptions::new(RealizationId::LINUX_UINPUT)) {
@@ -109,8 +116,8 @@ pub fn run_xbox_owner(
     let mut stale = false;
     let mut outcome = Ok(());
 
-    while active.load(Ordering::Acquire) {
-        if input.has_changed().unwrap_or(false) {
+    while let Ok(changed) = input.has_changed() {
+        if changed {
             let frame = input.borrow_and_update().clone();
             if let Some(frame) = frame {
                 last_seen = Instant::now();
@@ -160,7 +167,7 @@ pub fn run_xbox_owner(
         .and_then(|()| device.commit().map_err(|error| error.to_string()))
     {
         if outcome.is_ok() {
-            outcome = Err(error.to_string());
+            outcome = Err(error);
         }
     }
     device.close();

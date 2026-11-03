@@ -3,7 +3,7 @@ use std::{
     env,
     fmt::Write as _,
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, PoisonError,
         atomic::{AtomicBool, Ordering},
     },
     time::{Duration, Instant},
@@ -66,7 +66,7 @@ fn origin_matches(headers: &HeaderMap, expected: &str) -> bool {
         .is_some_and(|origin| origin == expected)
 }
 
-fn cookie_session<'a>(headers: &'a HeaderMap) -> Option<&'a str> {
+fn cookie_session(headers: &HeaderMap) -> Option<&str> {
     headers
         .get(header::COOKIE)?
         .to_str()
@@ -100,7 +100,7 @@ async fn pair(
         return StatusCode::BAD_REQUEST.into_response();
     }
 
-    let mut access = state.access.lock().unwrap_or_else(|e| e.into_inner());
+    let mut access = state.access.lock().unwrap_or_else(PoisonError::into_inner);
     if access.window_started.elapsed() >= Duration::from_secs(60) {
         access.window_started = Instant::now();
         access.failures = 0;
@@ -134,7 +134,7 @@ async fn upgrade(
         return StatusCode::FORBIDDEN.into_response();
     }
     let authorized = {
-        let access = state.access.lock().unwrap_or_else(|e| e.into_inner());
+        let access = state.access.lock().unwrap_or_else(PoisonError::into_inner);
         access
             .session
             .as_deref()
@@ -144,27 +144,41 @@ async fn upgrade(
     if !authorized {
         return StatusCode::UNAUTHORIZED.into_response();
     }
-    if state.active.swap(true, Ordering::AcqRel) {
+    let Some(slot) = SocketSlot::acquire(state.active) else {
         return StatusCode::CONFLICT.into_response();
-    }
+    };
     ws.max_frame_size(512)
         .max_message_size(512)
-        .on_upgrade(move |socket| serve_socket(socket, state))
+        .on_upgrade(move |socket| serve_socket(socket, slot))
         .into_response()
 }
 
-async fn serve_socket(mut socket: WebSocket, state: ServiceState) {
+struct SocketSlot(Arc<AtomicBool>);
+
+impl SocketSlot {
+    fn acquire(active: Arc<AtomicBool>) -> Option<Self> {
+        if active.swap(true, Ordering::AcqRel) {
+            return None;
+        }
+        Some(Self(active))
+    }
+}
+
+impl Drop for SocketSlot {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
+async fn serve_socket(mut socket: WebSocket, slot: SocketSlot) {
     let (tx, rx) = watch::channel(None);
     let (startup_tx, startup_rx) = oneshot::channel();
-    let live = Arc::new(AtomicBool::new(true));
-    let worker_live = Arc::clone(&live);
-    let worker = tokio::task::spawn_blocking(move || run_xbox_owner(rx, worker_live, startup_tx));
+    let worker = tokio::task::spawn_blocking(move || {
+        let _slot = slot;
+        run_xbox_owner(rx, startup_tx)
+    });
 
-    if !matches!(startup_rx.await, Ok(Ok(()))) {
-        let _ = socket
-            .send(Message::Text("virtual controller creation failed".into()))
-            .await;
-    } else {
+    if matches!(startup_rx.await, Ok(Ok(()))) {
         let mut latest_sequence = None;
         while let Some(message) = socket.recv().await {
             match message {
@@ -178,21 +192,22 @@ async fn serve_socket(mut socket: WebSocket, state: ServiceState) {
                     latest_sequence = Some(frame.seq);
                     tx.send_replace(Some(frame));
                 }
-                Ok(Message::Close(_)) | Err(_) => break,
-                Ok(Message::Binary(_)) => break,
+                Ok(Message::Close(_) | Message::Binary(_)) | Err(_) => break,
                 Ok(_) => {}
             }
         }
+    } else {
+        let _ = socket
+            .send(Message::Text("virtual controller creation failed".into()))
+            .await;
     }
 
-    live.store(false, Ordering::Release);
     drop(tx);
     match worker.await {
         Ok(Ok(())) => {}
         Ok(Err(error)) => eprintln!("virtual controller closed with error: {error}"),
         Err(error) => eprintln!("virtual controller task failed: {error}"),
     }
-    state.active.store(false, Ordering::Release);
 }
 
 fn security_headers(content_type: &'static str) -> [(header::HeaderName, &'static str); 4] {
@@ -270,9 +285,20 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, atomic::AtomicBool};
+
     use axum::http::{HeaderMap, HeaderValue, header};
 
-    use super::{cookie_session, origin_matches, random_session, token_matches};
+    use super::{SocketSlot, cookie_session, origin_matches, random_session, token_matches};
+
+    #[test]
+    fn dropped_upgrade_releases_socket_slot() {
+        let active = Arc::new(AtomicBool::new(false));
+        let slot = SocketSlot::acquire(Arc::clone(&active)).unwrap();
+        assert!(SocketSlot::acquire(Arc::clone(&active)).is_none());
+        drop(slot);
+        assert!(SocketSlot::acquire(active).is_some());
+    }
 
     #[test]
     fn token_matching_and_cookie_parsing() {
