@@ -9,6 +9,9 @@ this project adheres to [Semantic Versioning 2.0.0][semver].
 
 ### Added
 
+- Initial M1 browser-to-Xbox 360-style uinput implementation, versioned full-state input
+  contract, pairing/session checks, input watchdog, and explicit virtualgamepad owner.
+- Static no-build mobile controller layout and Node-native frontend state tests.
 - Repository baseline from `baseline-hardened-repo`: local hooks,
   visibility-gated CI, CodeQL, Scorecard, gitleaks history scan, SBOM and
   disclosure checks.
