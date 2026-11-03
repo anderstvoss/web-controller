@@ -54,9 +54,10 @@ coverage/
 __pycache__/
 *.py[cod]
 
-# Frontend dependencies and build output (web/ is planned)
+# Frontend dependencies and build output
 node_modules/
 /web/dist/
+/web/frontend-bom.json
 
 # Generated artifacts
 dist/

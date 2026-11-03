@@ -1,6 +1,13 @@
-import { test } from "node:test";
+import fc from "fast-check";
+import { test } from "vitest";
 import assert from "node:assert/strict";
-import { newState, snapshot, setStick, clearStick, neutralize } from "./input-model.mjs";
+import {
+  newState,
+  snapshot,
+  setStick,
+  clearStick,
+  neutralize,
+} from "../src/input-model.mjs";
 
 test("M1 state has the exact advertised shape", () => {
   const value = snapshot(newState(), 5, 42.25);
@@ -36,4 +43,32 @@ test("snapshot does not alias mutable controller state", () => {
   const saved = snapshot(value, 1, 22.5);
   value.buttons[0] = true;
   assert.equal(saved.buttons[0], false);
+});
+
+test("encoded frames fit the protocol and preserve normalized axes", () => {
+  fc.assert(
+    fc.property(
+      fc.integer({ min: 0, max: Number.MAX_SAFE_INTEGER }),
+      fc.integer({ min: -1000, max: 1000 }),
+      fc.integer({ min: -1000, max: 1000 }),
+      fc.array(fc.boolean(), { minLength: 15, maxLength: 15 }),
+      (seq, x, y, buttons) => {
+        const input = newState();
+        input.buttons = buttons;
+        setStick(input, 0, x, y, 100);
+        setStick(input, 1, -x, -y, 100);
+        input.triggers = [1, 0];
+        const frame = snapshot(input, seq, 123.5);
+        const encoded = JSON.stringify(frame);
+        assert.ok(Buffer.byteLength(encoded) <= 512);
+        assert.equal(JSON.stringify(JSON.parse(encoded)), encoded);
+        assert.ok(
+          Math.hypot(frame.sticks[0] ?? 0, frame.sticks[1] ?? 0) <= 1.000001,
+        );
+        assert.ok(
+          Math.hypot(frame.sticks[2] ?? 0, frame.sticks[3] ?? 0) <= 1.000001,
+        );
+      },
+    ),
+  );
 });

@@ -1,28 +1,46 @@
-import { newState, snapshot, setStick, clearStick, neutralize } from "/input-model.mjs";
+import {
+  BUTTON_COUNT,
+  newState,
+  snapshot,
+  setStick,
+  clearStick,
+  neutralize,
+} from "./input-model.mjs";
+
+function required<T extends Element>(selector: string): T {
+  const element = document.querySelector<T>(selector);
+  if (!element) throw new Error(`Missing required control ${selector}`);
+  return element;
+}
 
 const state = newState();
-const activePointers = new Map();
-const status = document.querySelector("#status");
-const pairView = document.querySelector("#pair-view");
-const controller = document.querySelector("#controller");
-const form = document.querySelector("#pair-form");
-const errorText = document.querySelector("#pair-error");
-let socket = null;
-let intervalId = null;
+const activePointers = new Map<number, { element: HTMLElement }>();
+const status = required<HTMLElement>("#status");
+const pairView = required<HTMLElement>("#pair-view");
+const controller = required<HTMLElement>("#controller");
+const form = required<HTMLFormElement>("#pair-form");
+const errorText = required<HTMLElement>("#pair-error");
+let socket: WebSocket | null = null;
+let intervalId: number | undefined;
 let sequence = 0;
 let ready = false;
 let connecting = false;
-let reconnectUntil = null;
-let retryTimer;
-const joinButton = document.querySelector("#request-join");
-const endButton = document.querySelector("#end-session");
+let reconnectUntil: number | null = null;
+let retryTimer: number | undefined;
+const joinButton = required<HTMLElement>("#request-join");
+const endButton = required<HTMLElement>("#end-session");
 
-function setStatus(message) {
+function setStatus(message: string) {
   status.textContent = message;
 }
 
 function sendSnapshot() {
-  if (!ready || !socket || socket.readyState !== WebSocket.OPEN || socket.bufferedAmount > 1024) {
+  if (
+    !ready ||
+    !socket ||
+    socket.readyState !== WebSocket.OPEN ||
+    socket.bufferedAmount > 1024
+  ) {
     return;
   }
   sequence += 1;
@@ -32,48 +50,59 @@ function sendSnapshot() {
 function resetControls() {
   activePointers.clear();
   neutralize(state);
-  document.querySelectorAll(".pressed").forEach((node) => node.classList.remove("pressed"));
-  document.querySelectorAll(".stick-knob").forEach((node) => {
+  document
+    .querySelectorAll(".pressed")
+    .forEach((node) => node.classList.remove("pressed"));
+  document.querySelectorAll<HTMLElement>(".stick-knob").forEach((node) => {
     node.style.transform = "";
   });
   sendSnapshot();
 }
 
-function updateButton(element, pressed) {
+function updateButton(element: HTMLElement, pressed: boolean) {
   if (element.dataset.button !== undefined) {
     const index = Number(element.dataset.button);
-    state.buttons[index] = pressed;
+    if (Number.isInteger(index) && index >= 0 && index < BUTTON_COUNT) {
+      state.buttons.fill(pressed, index, index + 1);
+    }
   } else if (element.dataset.trigger !== undefined) {
     const index = Number(element.dataset.trigger);
-    state.triggers[index] = pressed ? 1 : 0;
+    if (index === 0) state.triggers[0] = pressed ? 1 : 0;
+    if (index === 1) state.triggers[1] = pressed ? 1 : 0;
   }
   element.classList.toggle("pressed", pressed);
   sendSnapshot();
 }
 
-function updateStick(element, event) {
+function updateStick(element: HTMLElement, event: PointerEvent) {
   const index = Number(element.dataset.stick);
+  if (index !== 0 && index !== 1) return;
   const rect = element.getBoundingClientRect();
   const radius = Math.min(rect.width, rect.height) / 2;
   const dx = event.clientX - (rect.left + rect.width / 2);
   const dy = event.clientY - (rect.top + rect.height / 2);
   setStick(state, index, dx, dy, radius);
-  const knob = element.querySelector(".stick-knob");
+  const knob = element.querySelector<HTMLElement>(".stick-knob");
+  if (!knob) return;
   const travel = radius * 0.45;
   knob.style.transform = `translate(${state.sticks[index * 2] * travel}px, ${-state.sticks[index * 2 + 1] * travel}px)`;
   sendSnapshot();
 }
 
-function onPointerDown(event) {
+function onPointerDown(event: PointerEvent) {
   if (!ready || !socket || socket.readyState !== WebSocket.OPEN) {
     return;
   }
   const element = event.currentTarget;
+  if (!(element instanceof HTMLElement)) return;
   if (element.dataset.stick !== undefined) {
     const index = Number(element.dataset.stick);
+    if (index !== 0 && index !== 1) return;
     for (const assigned of activePointers.values()) {
-      if (assigned.element.dataset.stick !== undefined &&
-          Number(assigned.element.dataset.stick) === index) {
+      if (
+        assigned.element.dataset.stick !== undefined &&
+        Number(assigned.element.dataset.stick) === index
+      ) {
         return;
       }
     }
@@ -88,16 +117,18 @@ function onPointerDown(event) {
   }
 }
 
-function onPointerMove(event) {
+function onPointerMove(event: PointerEvent) {
   const assigned = activePointers.get(event.pointerId);
-  if (assigned?.element === event.currentTarget &&
-      assigned.element.dataset.stick !== undefined) {
+  if (
+    assigned?.element === event.currentTarget &&
+    assigned.element.dataset.stick !== undefined
+  ) {
     event.preventDefault();
     updateStick(assigned.element, event);
   }
 }
 
-function onPointerEnd(event) {
+function onPointerEnd(event: PointerEvent) {
   const assigned = activePointers.get(event.pointerId);
   if (!assigned || assigned.element !== event.currentTarget) {
     return;
@@ -106,17 +137,23 @@ function onPointerEnd(event) {
   const element = assigned.element;
   if (element.dataset.stick !== undefined) {
     const index = Number(element.dataset.stick);
+    if (index !== 0 && index !== 1) return;
     clearStick(state, index);
-    element.querySelector(".stick-knob").style.transform = "";
+    const knob = element.querySelector<HTMLElement>(".stick-knob");
+    if (knob) knob.style.transform = "";
     sendSnapshot();
   } else {
     // Several fingers may hold the same control; release only after the last.
-    const stillPressed = [...activePointers.values()].some((item) => item.element === element);
+    const stillPressed = [...activePointers.values()].some(
+      (item) => item.element === element,
+    );
     updateButton(element, stillPressed);
   }
 }
 
-for (const element of document.querySelectorAll("[data-button], [data-trigger], [data-stick]")) {
+for (const element of document.querySelectorAll<HTMLElement>(
+  "[data-button], [data-trigger], [data-stick]",
+)) {
   element.addEventListener("pointerdown", onPointerDown);
   element.addEventListener("pointermove", onPointerMove);
   element.addEventListener("pointerup", onPointerEnd);
@@ -125,7 +162,7 @@ for (const element of document.querySelectorAll("[data-button], [data-trigger], 
   element.addEventListener("contextmenu", (event) => event.preventDefault());
 }
 
-function showPairing(message) {
+function showPairing(message: string) {
   ready = false;
   pairView.classList.remove("hidden");
   controller.classList.add("hidden");
@@ -138,8 +175,8 @@ function connect() {
   uri.protocol = "wss:";
   const connection = new WebSocket(uri);
   socket = connection;
-  connection.addEventListener("message", ({ data }) => {
-    if (data !== "ready") {
+  connection.addEventListener("message", (event: MessageEvent<unknown>) => {
+    if (event.data !== "ready") {
       errorText.textContent = "Host failed to create controller";
       return;
     }
@@ -163,15 +200,17 @@ function connect() {
   });
 }
 
-async function post(path, body) {
+async function post(path: string, body?: { code: string }) {
   return fetch(path, {
     method: "POST",
     credentials: "same-origin",
     cache: "no-store",
-    ...(body === undefined ? {} : {
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    }),
+    ...(body === undefined
+      ? {}
+      : {
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }),
   });
 }
 
@@ -203,12 +242,13 @@ async function resume() {
   }
 }
 
-async function pair(code) {
+async function pair(code: string) {
   const response = await post("/pair", { code });
-  if (response.status !== 204) throw new Error(`Pairing rejected (HTTP ${response.status})`);
+  if (response.status !== 204)
+    throw new Error(`Pairing rejected (HTTP ${response.status})`);
 }
 
-async function pairAction(action) {
+async function pairAction(action: () => Promise<void>) {
   if (connecting || socket) return;
   window.clearTimeout(retryTimer);
   reconnectUntil = null;
@@ -218,7 +258,8 @@ async function pairAction(action) {
     await action();
     connect();
   } catch (error) {
-    errorText.textContent = error instanceof Error ? error.message : "Pairing failed";
+    errorText.textContent =
+      error instanceof Error ? error.message : "Pairing failed";
   } finally {
     connecting = false;
   }
@@ -226,7 +267,7 @@ async function pairAction(action) {
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
-  const input = document.querySelector("#pair-code");
+  const input = required<HTMLInputElement>("#pair-code");
   void pairAction(async () => {
     await pair(input.value);
     input.value = "";
@@ -236,7 +277,8 @@ form.addEventListener("submit", (event) => {
 joinButton.addEventListener("click", () => {
   void pairAction(async () => {
     const request = await post("/join/request");
-    if (request.status !== 202) throw new Error("Host cannot accept more join requests");
+    if (request.status !== 202)
+      throw new Error("Host cannot accept more join requests");
     setStatus(`Ask the host to approve request ${await request.text()}`);
     const deadline = performance.now() + 120000;
     while (performance.now() < deadline) {
@@ -262,7 +304,8 @@ endButton.addEventListener("click", async () => {
 });
 
 const invite = new URLSearchParams(window.location.hash.slice(1)).get("invite");
-if (window.location.hash) window.history.replaceState(null, "", window.location.pathname);
+if (window.location.hash)
+  window.history.replaceState(null, "", window.location.pathname);
 if (invite) {
   void pairAction(() => pair(invite));
 } else {

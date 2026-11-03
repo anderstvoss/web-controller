@@ -125,6 +125,50 @@ repos:
         pass_filenames: false
         stages: [pre-push]
 
+      - id: frontend-format
+        name: frontend format
+        entry: npm --prefix web run format:check
+        language: system
+        files: '^web/'
+        pass_filenames: false
+
+      - id: frontend-lint
+        name: frontend lint
+        entry: npm --prefix web run lint
+        language: system
+        files: '^web/'
+        pass_filenames: false
+
+      - id: frontend-typecheck
+        name: frontend typecheck
+        entry: npm --prefix web run typecheck
+        language: system
+        files: '^web/'
+        pass_filenames: false
+
+      - id: frontend-test
+        name: frontend test
+        entry: npm --prefix web test
+        language: system
+        files: '^web/'
+        pass_filenames: false
+
+      - id: frontend-audit
+        name: frontend audit
+        entry: npm --prefix web audit --audit-level=moderate
+        language: system
+        files: '^web/'
+        pass_filenames: false
+        stages: [pre-push]
+
+      - id: frontend-licenses
+        name: frontend licenses
+        entry: npm --prefix web run licenses
+        language: system
+        files: '^web/'
+        pass_filenames: false
+        stages: [pre-push]
+
       - id: history-guard
         name: history disclosure scan (file versions + commit identities)
         # Warn-only on identities locally; CI's Disclosure checks job fails.
