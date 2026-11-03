@@ -10,9 +10,10 @@ an ordinary virtual controller through the
 [`virtualgamepad`](https://github.com/anderstvoss/virtualgamepad) library,
 so games, SDL applications and emulators see a normal local device.
 
-> **Status:** pre-implementation. This repository holds the hardened
-> baseline and the planning handoff. No controller functionality exists
-> yet. See [CHANGELOG.md](CHANGELOG.md) for tracked changes.
+> **Status:** M1 implementation candidate. The browser, input contract and
+> Xbox 360-style uinput integration are under validation. Host enumeration,
+> real game/SDL consumption, HTTPS deployment and required CI gates have not
+> yet been demonstrated. See [CHANGELOG.md](CHANGELOG.md) for tracked changes.
 
 ## Scope
 
@@ -83,8 +84,10 @@ gitleaks detect
 ruff check .    # Python helpers under scripts/
 ```
 
-The TypeScript frontend (`web/`) does not exist yet. Its hardening
-profile is added in the same change that creates it; see
+The M1 browser interface currently uses no-build static ES modules in
+`assets/`, with Node's built-in test runner; this is deliberately an interim
+frontend. A future TypeScript `web/` migration must include the frontend
+hardening profile before merging; see
 [docs/HARDENING-CHECKLIST.md](docs/HARDENING-CHECKLIST.md#frontend-web-onboarding).
 
 Before publishing or merging anything that matters, run a deep gitleaks
@@ -96,6 +99,50 @@ scripts/deep-scan.sh
 
 Record user-visible changes in [CHANGELOG.md](CHANGELOG.md) under
 `Unreleased`.
+
+## M1 browser-controller prototype
+
+M1 accepts **one phone** at a time, maps full-state inputs through the pinned
+`virtualgamepad` Git dependency, and creates a Linux Xbox 360-style uinput
+controller. This is **not** Microsoft's XInput USB protocol. For the contract
+and unverified acceptance gates, see
+[docs/planning/m1-implementation.md](docs/planning/m1-implementation.md).
+
+The Rust service intentionally does not terminate TLS. Configure a **trusted
+HTTPS reverse proxy**, restrict the backend listener to the proxy, and set:
+
+```sh
+export WEB_CONTROLLER_BIND='<proxy-accessible-bind-address>:<port>'
+export WEB_CONTROLLER_ORIGIN='https://<trusted-hostname>'
+export WEB_CONTROLLER_PAIR_CODE="$(openssl rand -hex 16)"
+# Display this code to the operator locally; never save it in Git.
+printf '%s\n' "$WEB_CONTROLLER_PAIR_CODE"
+cargo run
+```
+
+On a phone that can reach the trusted HTTPS origin, open the root page, enter
+the pairing code, and press Connect. The page presents touchscreen buttons,
+dual analog sticks, and triggers. The virtual controller is created on
+connection; stale input is neutralized after a watchdog timeout, and the
+controller is destroyed when the WebSocket closes.
+
+Operational requirements: Linux `/dev/uinput` must be present and accessible
+to the service account without running the HTTP service as root. Only expose
+the HTTPS proxy to trusted clients; never forward the unencrypted backend to
+the LAN. This prototype does not provision certificates, trust stores,
+reverse-proxy settings, host ACLs or QR codes. No development credentials
+are built into the frontend.
+
+Frontend state tests require only Node.js:
+
+```sh
+node --test assets/input-model.test.mjs
+node --check assets/app.mjs
+```
+
+The full Phase 1 acceptance gate requires an actual Linux host, evdev
+inspection, and an SDL/game consumer test. Until those tests are recorded,
+the implementation must not be described as consumer-validated.
 
 ## Contributing
 

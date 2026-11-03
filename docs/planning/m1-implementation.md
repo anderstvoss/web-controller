@@ -1,6 +1,6 @@
 # M1: single-phone Xbox 360-style controller (implementation record)
 
-Status: engineering buildout. This file is subordinate to [the repository handoff](repository-handoff.md) and `AGENTS.md`.
+Status: implementation candidate; consumer validation and required build gates pending. This file is subordinate to [the repository handoff](repository-handoff.md) and `AGENTS.md`.
 
 ## Minimum vertical slice
 
