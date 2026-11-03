@@ -122,8 +122,8 @@ pub fn run_xbox_owner(
         if !stale && last_seen.elapsed() > INPUT_TIMEOUT {
             if let Err(error) = device
                 .neutralize()
-                .and_then(|()| device.commit())
                 .map_err(|error| error.to_string())
+                .and_then(|()| device.commit().map_err(|error| error.to_string()))
             {
                 outcome = Err(error);
                 break;
@@ -145,7 +145,11 @@ pub fn run_xbox_owner(
         thread::sleep(delay.max(Duration::from_micros(250)));
     }
 
-    if let Err(error) = device.neutralize().and_then(|()| device.commit()) {
+    if let Err(error) = device
+        .neutralize()
+        .map_err(|error| error.to_string())
+        .and_then(|()| device.commit().map_err(|error| error.to_string()))
+    {
         if outcome.is_ok() {
             outcome = Err(error.to_string());
         }
