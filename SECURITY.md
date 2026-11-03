@@ -9,11 +9,11 @@ Security updates are provided for the latest version on the `main` branch unless
 Please do not report security vulnerabilities through public GitHub issues.
 
 **Preferred:** open a private report at
-<https://github.com/TEMPLATE_OWNER/TEMPLATE_REPO/security/advisories/new>
+<https://github.com/anderstvoss/web-controller/security/advisories/new>
 (GitHub Private Vulnerability Reporting).
 
 **Alternative:** email the maintainer at
-<TEMPLATE_MAINTAINER_EMAIL>.
+<anderstvoss@gmail.com>.
 
 Include:
 
@@ -40,8 +40,8 @@ This repo enforces:
   (ruff pyflakes + bandit rules) and their unit tests run in CI.
 - CodeQL (`security-extended`) for Rust and for the workflow files.
 - CI on every PR and push to `main`: `cargo fmt`, `clippy -D warnings`,
-  `cargo check`, `cargo test` across Ubuntu + macOS + Windows; the full
-  pre-commit + pre-push policy replay on the same matrix; `cargo-deny`
+  `cargo check`, `cargo test` on Ubuntu (Linux-only service); the full
+  pre-commit + pre-push policy replay on Ubuntu + macOS + Windows; `cargo-deny`
   + `cargo-audit`; `actions/dependency-review-action` on PRs.
 - All third-party actions SHA-pinned; `step-security/harden-runner`
   with egress-policy `block` and an explicit allowlist on every Linux
@@ -61,6 +61,17 @@ This repo enforces:
   dependency manifests.
 - A full-history secret scan is a precondition for changing repository
   visibility.
+
+## Threat surface of the service (planned)
+
+The service lets LAN clients create and drive local input devices, so an
+unauthorized client could inject input into the host. The design treats
+every browser as untrusted: pairing must authorize device creation,
+WebSocket messages are validated and rate- and size-limited, the origin is
+checked, device counts are capped, and the service runs unprivileged with
+narrowly scoped access to `/dev/uinput` and `/dev/uhid`. The detailed
+threat model will live in `docs/SECURITY.md` once written. Until a release
+says otherwise, run it only on a trusted network.
 
 For the end-to-end setup procedure (reusable across projects), see
 [`docs/REPO-SETUP.md`](docs/REPO-SETUP.md).

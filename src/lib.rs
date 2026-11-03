@@ -1,9 +1,8 @@
-//! `TEMPLATE_CRATE_NAME` — one-sentence description.
+//! `web_controller`: serves a local web page that turns smartphones into
+//! Linux virtual game controllers through `virtualgamepad`.
 //!
-//! Replace this docstring with the crate's actual purpose. The
-//! backticks around the crate name are required by
-//! `clippy::doc_markdown` (enabled via `Cargo.toml`'s `[lints.clippy]`
-//! pedantic suite).
+//! Placeholder crate root. No functionality is implemented yet; the plan
+//! is in `docs/planning/repository-handoff.md`.
 
 #[cfg(test)]
 mod tests {

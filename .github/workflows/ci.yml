@@ -156,7 +156,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # Linux-only service (it drives /dev/uinput and /dev/uhid through
+        # virtualgamepad), so tests run on Ubuntu only. The policy job
+        # keeps its three-OS matrix because contributors' hooks run there.
+        os: [ubuntu-latest]
 
     steps:
       - name: Harden runner

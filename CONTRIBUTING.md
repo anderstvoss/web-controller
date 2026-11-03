@@ -1,6 +1,7 @@
-# Contributing to TEMPLATE_PROJECT_NAME
+# Contributing to web-controller
 
-Thanks for your interest. Please read this file end-to-end before opening a PR.
+Thanks for your interest. Please read this file and [AGENTS.md](AGENTS.md)
+end-to-end before opening a PR.
 
 ## Development setup
 
@@ -37,7 +38,7 @@ Every push runs additional pre-push hooks: gitleaks full-tree scan,
 tracked-file blocker, local-paths guard, `cargo deny check`, and
 `cargo audit`.
 
-CI re-runs the cargo gate on the matrix (Ubuntu + macOS + Windows) plus
+CI re-runs the cargo gate on Ubuntu (the service is Linux-only) plus
 `cargo-deny`, `cargo-audit`, `dependency-review` on PRs, and OpenSSF
 Scorecard on pushes to `main`.
 

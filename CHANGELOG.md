@@ -9,6 +9,12 @@ this project adheres to [Semantic Versioning 2.0.0][semver].
 
 ### Added
 
+- Repository baseline from `baseline-hardened-repo`: local hooks,
+  visibility-gated CI, CodeQL, Scorecard, gitleaks history scan, SBOM and
+  disclosure checks.
+- Planning handoff (`docs/planning/repository-handoff.md`) and agent rules
+  (`AGENTS.md`).
+
 ### Changed
 
 ### Deprecated
@@ -21,4 +27,4 @@ this project adheres to [Semantic Versioning 2.0.0][semver].
 
 [keep-a-changelog]: https://keepachangelog.com/en/1.1.0/
 [semver]: https://semver.org/spec/v2.0.0.html
-[Unreleased]: https://github.com/TEMPLATE_OWNER/TEMPLATE_REPO/compare/HEAD...HEAD
+[Unreleased]: https://github.com/anderstvoss/web-controller/commits/main
