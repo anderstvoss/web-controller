@@ -22,7 +22,10 @@ use axum::{
 use rand::random;
 use serde::Deserialize;
 use subtle::ConstantTimeEq;
-use tokio::{net::TcpListener, sync::{oneshot, watch}};
+use tokio::{
+    net::TcpListener,
+    sync::{oneshot, watch},
+};
 
 use crate::{device::run_xbox_owner, input::parse_frame};
 
@@ -277,14 +280,20 @@ mod tests {
         assert!(!token_matches("a", "b"));
         assert!(!token_matches("a", "aa"));
         let mut headers = HeaderMap::new();
-        headers.insert(header::COOKIE, HeaderValue::from_static("other=1; wc_session=abc"));
+        headers.insert(
+            header::COOKIE,
+            HeaderValue::from_static("other=1; wc_session=abc"),
+        );
         assert_eq!(cookie_session(&headers), Some("abc"));
     }
 
     #[test]
     fn origin_is_exact_not_prefix_based() {
         let mut headers = HeaderMap::new();
-        headers.insert(header::ORIGIN, HeaderValue::from_static("https://example.test"));
+        headers.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("https://example.test"),
+        );
         assert!(origin_matches(&headers, "https://example.test"));
         assert!(!origin_matches(&headers, "https://example.test.evil"));
     }

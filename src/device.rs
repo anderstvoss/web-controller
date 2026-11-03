@@ -1,7 +1,10 @@
 //! Single-owner adapter to the upstream Xbox 360-style uinput controller.
 //! Network handlers may only publish full-state snapshots; they never own HID handles.
 use std::{
-    sync::{Arc, atomic::{AtomicBool, Ordering}},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -70,7 +73,10 @@ fn apply(device: &mut Xbox360Controller, frame: &InputFrame) -> Result<(), Strin
         .set_right_stick(stick_axis(frame.sticks[2]), stick_axis(frame.sticks[3]))
         .map_err(|error| error.to_string())?;
     device
-        .set_triggers(trigger_axis(frame.triggers[0]), trigger_axis(frame.triggers[1]))
+        .set_triggers(
+            trigger_axis(frame.triggers[0]),
+            trigger_axis(frame.triggers[1]),
+        )
         .map_err(|error| error.to_string())?;
     device.commit().map_err(|error| error.to_string())
 }
@@ -109,7 +115,10 @@ pub fn run_xbox_owner(
             if let Some(frame) = frame {
                 last_seen = Instant::now();
                 stale = false;
-                if last_controls.as_ref().is_none_or(|old| !same_controls(old, &frame)) {
+                if last_controls
+                    .as_ref()
+                    .is_none_or(|old| !same_controls(old, &frame))
+                {
                     if let Err(error) = apply(&mut device, &frame) {
                         outcome = Err(error);
                         break;
@@ -175,7 +184,10 @@ mod tests {
     #[test]
     fn changed_sequence_alone_does_not_change_controls() {
         let left = InputFrame::default();
-        let right = InputFrame { seq: 1, ..left.clone() };
+        let right = InputFrame {
+            seq: 1,
+            ..left.clone()
+        };
         assert!(same_controls(&left, &right));
     }
 }
