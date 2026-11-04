@@ -380,7 +380,10 @@ mod tests {
 
 
     #[tokio::test]
-    #[expect(clippy::too_many_lines, reason = "integration scenario checks the same operator client and registry")]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "integration scenario checks the same operator client and registry"
+    )]
     async fn http_operator_auth_and_live_exposure_controls() {
         use std::net::Ipv4Addr;
         use tokio::{
@@ -444,8 +447,18 @@ mod tests {
             axum::serve(listener, super::router(state)).await.unwrap();
         });
 
-        assert_eq!(request(address, "GET", "/api/state", "", false, false).await.0, 401);
-        assert_eq!(request(address, "GET", "/api/state", "", true, false).await.0, 200);
+        assert_eq!(
+            request(address, "GET", "/api/state", "", false, false)
+                .await
+                .0,
+            401
+        );
+        assert_eq!(
+            request(address, "GET", "/api/state", "", true, false)
+                .await
+                .0,
+            200
+        );
         assert_eq!(
             request(address, "GET", "/api/state", "", false, false)
                 .await

@@ -216,23 +216,24 @@ requireElement<HTMLFormElement>("#settings-form").addEventListener(
 requireElement<HTMLFormElement>("#settings-form").addEventListener(
   "submit",
   (event) => {
-  event.preventDefault();
-  void perform(async () => {
-    if (
-      latest?.exposure_enabled &&
-      !exposed.checked &&
-      !window.confirm("Disable exposure and disconnect all active controllers?")
-    ) {
+    event.preventDefault();
+    void perform(async () => {
+      if (
+        latest?.exposure_enabled &&
+        !exposed.checked &&
+        !window.confirm("Disable exposure and disconnect all active controllers?")
+      ) {
+        settingsDirty = false;
+        render(latest);
+        return;
+      }
+      await command("/api/settings", {
+        exposure_enabled: exposed.checked,
+        join_requests_enabled: joins.checked,
+        max_sessions: Number(capacity.value),
+      });
       settingsDirty = false;
-      render(latest);
-      return;
-    }
-    await command("/api/settings", {
-      exposure_enabled: exposed.checked,
-      join_requests_enabled: joins.checked,
-      max_sessions: Number(capacity.value),
     });
-    settingsDirty = false;
   },
 );
 
