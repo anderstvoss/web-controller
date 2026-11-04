@@ -362,6 +362,136 @@ mod tests {
         assert!(!origin_matches(&headers, &state.origin));
     }
 
+
+    #[tokio::test]
+    async fn HTTP_operator_auth_and_live_exposure_controls() {
+        use std::net::Ipv4Addr;
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::{TcpListener, TcpStream},
+        };
+
+        async fn request(
+            address: std::net::SocketAddr,
+            method: &str,
+            path: &str,
+            body: &str,
+            auth: bool,
+            origin: bool,
+        ) -> (u16, String) {
+            let mut stream = TcpStream::connect(address).await.unwrap();
+            let auth_header = if auth {
+                "Authorization: Bearer long-test-credential-that-is-not-production-secret\r\n"
+            } else {
+                ""
+            };
+            let origin_header = if origin {
+                "Origin: https://example.test\r\n"
+            } else {
+                ""
+            };
+            stream
+                .write_all(
+                    format!(
+                        "{method} {path} HTTP/1.1\r\nHost: example.test\r\n{auth_header}{origin_header}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len(),
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+            let mut bytes = Vec::new();
+            tokio::time::timeout(
+                std::time::Duration::from_secs(3),
+                stream.read_to_end(&mut bytes),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+            let response = String::from_utf8(bytes).unwrap();
+            let (headers, contents) = response.split_once("\r\n\r\n").unwrap();
+            assert!(headers.to_ascii_lowercase().contains("cache-control: no-store"));
+            let status = headers.split_whitespace().nth(1).unwrap().parse().unwrap();
+            (status, contents.into())
+        }
+
+        let state = state();
+        let sessions = state.sessions.clone();
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let task = tokio::spawn(async move {
+            axum::serve(listener, super::router(state)).await.unwrap();
+        });
+
+        assert_eq!(request(address, "GET", "/api/state", "", false, false).await.0, 401);
+        assert_eq!(request(address, "GET", "/api/state", "", true, false).await.0, 200);
+        assert_eq!(
+            request(address, "POST", "/api/invites", r#"{"reusable":false}"#, true, false).await.0,
+            403,
+        );
+        let (code, invite) =
+            request(address, "POST", "/api/invites", r#"{"reusable":false}"#, true, true).await;
+        assert_eq!(code, 201);
+        let created: serde_json::Value = serde_json::from_str(&invite).unwrap();
+        let id = created["id"].as_u64().unwrap();
+        assert_eq!(sessions.lock().snapshot().invites.len(), 1);
+        assert!(!created["url"].as_str().unwrap().is_empty());
+        let url = created["url"].as_str().unwrap();
+        let invite_token = url.split("#invite=").nth(1).unwrap();
+        let session_token = sessions.lock().redeem(invite_token).unwrap();
+        assert!(sessions.lock().has_session(&session_token));
+        assert_eq!(
+            request(
+                address,
+                "POST",
+                "/api/settings",
+                r#"{"exposure_enabled":true,"join_requests_enabled":true,"max_sessions":0}"#,
+                true,
+                true,
+            ).await.0,
+            400,
+        );
+        let (code, _) = request(
+            address,
+            "POST",
+            "/api/settings",
+            r#"{"exposure_enabled":false,"join_requests_enabled":false,"max_sessions":2}"#,
+            true,
+            true,
+        ).await;
+        assert_eq!(code, 200);
+        let (code, body) = request(address, "GET", "/api/state", "", true, false).await;
+        assert_eq!(code, 200);
+        let snapshot: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(snapshot["exposure_enabled"], false);
+        assert_eq!(snapshot["join_requests_enabled"], false);
+        assert_eq!(snapshot["max_sessions"], 2);
+        assert!(snapshot["sessions"].as_array().unwrap().is_empty());
+        assert!(snapshot["invites"].as_array().unwrap().is_empty());
+        assert!(!body.contains(&session_token));
+        assert_eq!(
+            request(address, "POST", "/api/invites", r#"{"reusable":false}"#, true, true).await.0,
+            409,
+        );
+        assert_eq!(
+            request(address, "POST", &format!("/api/invites/{id}/revoke"), "{}", true, true)
+                .await
+                .0,
+            404,
+        );
+        task.abort();
+        let _ = task.await;
+    }
+
+    proptest::proptest! {
+        #[test]
+        fn untrusted_settings_json_never_panics(
+            bytes in proptest::collection::vec(proptest::prelude::any::<u8>(), 0..1025)
+        ) {
+            let _: Result<super::Settings, _> = serde_json::from_slice(&bytes);
+        }
+    }
+
     #[test]
     fn invalid_admin_origins_fail_closed() {
         assert!(validate_origin("https://example.test").is_ok());
