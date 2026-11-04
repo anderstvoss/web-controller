@@ -25,6 +25,9 @@ this project adheres to [Semantic Versioning 2.0.0][semver].
 
 ### Changed
 
+- Build the frontend from strict TypeScript with locked npm dependencies,
+  formatting, lint, property tests, audit, license, SBOM and CodeQL gates.
+
 ### Deprecated
 
 ### Removed

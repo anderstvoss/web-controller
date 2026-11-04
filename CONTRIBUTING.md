@@ -28,6 +28,19 @@ now-stale wrappers so `core.hooksPath` is the only source:
 rm -f .git/hooks/pre-commit .git/hooks/pre-push
 ```
 
+The frontend uses the Node version in `web/.nvmrc` and the npm version
+declared in `web/package.json`. Before running all-file hooks, install its
+locked build tools and compile the assets:
+
+```sh
+(
+  cd web
+  nvm use
+  npm ci
+  npm run build
+)
+```
+
 ## Required gates
 
 Every commit runs pre-commit hooks: gitleaks, custom blockers for env
