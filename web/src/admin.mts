@@ -69,7 +69,7 @@ async function api<T>(path: string, body?: object): Promise<T | null> {
     cache: "no-store",
     credentials: "omit",
     headers: {
-      Authorization: `Bearer ${token}`,
+      Authorization: `***
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
@@ -131,42 +131,31 @@ function render(snapshot: Snapshot) {
 
   invites.replaceChildren(
     ...snapshot.invites.map((invite) =>
-      listEntry(
-        describeInvite(invite),
-        [
-          button("Revoke", () =>
-            command(`/api/invites/${invite.id}/revoke`, {}),
-          ),
-        ],
-      ),
+      listEntry(describeInvite(invite), [
+        button("Revoke", () => command(`/api/invites/${invite.id}/revoke`, {})),
+      ]),
     ),
   );
   sessions.replaceChildren(
     ...snapshot.sessions.map((session) =>
-      listEntry(
-        describeSession(session),
-        [
-          button("Kick", async () => {
-            if (!window.confirm(`Kick controller ${session.id}?`)) return;
-            await command(`/api/sessions/${session.id}/kick`, {});
-          }),
-        ],
-      ),
+      listEntry(describeSession(session), [
+        button("Kick", async () => {
+          if (!window.confirm(`Kick controller ${session.id}?`)) return;
+          await command(`/api/sessions/${session.id}/kick`, {});
+        }),
+      ]),
     ),
   );
   requests.replaceChildren(
     ...snapshot.requests.map((request) =>
-      listEntry(
-        describeRequest(request),
-        [
-          button("Approve", () =>
-            command(`/api/requests/${request.id}/resolve`, { approved: true }),
-          ),
-          button("Reject", () =>
-            command(`/api/requests/${request.id}/resolve`, { approved: false }),
-          ),
-        ],
-      ),
+      listEntry(describeRequest(request), [
+        button("Approve", () =>
+          command(`/api/requests/${request.id}/resolve`, { approved: true }),
+        ),
+        button("Reject", () =>
+          command(`/api/requests/${request.id}/resolve`, { approved: false }),
+        ),
+      ]),
     ),
   );
 }

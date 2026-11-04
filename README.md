@@ -10,10 +10,10 @@ an ordinary virtual controller through the
 [`virtualgamepad`](https://github.com/anderstvoss/virtualgamepad) library,
 so games, SDL applications and emulators see a normal local device.
 
-> **Status:** M1 implementation candidate. The browser, input contract and
-> Xbox 360-style uinput integration are under validation. Host enumeration,
-> real game/SDL consumption, HTTPS deployment and required CI gates have not
-> yet been demonstrated. See [CHANGELOG.md](CHANGELOG.md) for tracked changes.
+> **Status:** M1 merged. M2 sessions and TypeScript frontend are in stacked
+> PRs #7 and #8; the M2.5 administration console is proposed in PR #9.
+> Automated checks are separate from host enumeration and actual SDL/game
+> consumer acceptance. See [CHANGELOG.md](CHANGELOG.md) for tracked changes.
 
 ## Scope
 
