@@ -56,6 +56,7 @@ const requests = requireElement<HTMLUListElement>("#requests");
 const issued = requireElement<HTMLDivElement>("#issued");
 let token = "";
 let loading = false;
+let settingsDirty = false;
 let latest: Snapshot | null = null;
 
 function setFeedback(message: string) {
@@ -107,9 +108,11 @@ function listEntry(
 
 function render(snapshot: Snapshot) {
   latest = snapshot;
-  exposed.checked = snapshot.exposure_enabled;
-  joins.checked = snapshot.join_requests_enabled;
-  capacity.value = String(snapshot.max_sessions);
+  if (!settingsDirty) {
+    exposed.checked = snapshot.exposure_enabled;
+    joins.checked = snapshot.join_requests_enabled;
+    capacity.value = String(snapshot.max_sessions);
+  }
   connectionStatus.textContent = snapshot.exposure_enabled
     ? `Live · ${snapshot.sessions.length} authorized`
     : "Exposure disabled";
@@ -204,6 +207,13 @@ form.addEventListener("submit", (event) => {
 });
 
 requireElement<HTMLFormElement>("#settings-form").addEventListener(
+  "change",
+  () => {
+    settingsDirty = true;
+  },
+);
+
+requireElement<HTMLFormElement>("#settings-form").addEventListener(
   "submit",
   (event) => {
   event.preventDefault();
@@ -213,6 +223,7 @@ requireElement<HTMLFormElement>("#settings-form").addEventListener(
       !exposed.checked &&
       !window.confirm("Disable exposure and disconnect all active controllers?")
     ) {
+      settingsDirty = false;
       render(latest);
       return;
     }
@@ -221,6 +232,7 @@ requireElement<HTMLFormElement>("#settings-form").addEventListener(
       join_requests_enabled: joins.checked,
       max_sessions: Number(capacity.value),
     });
+    settingsDirty = false;
   },
 );
 
