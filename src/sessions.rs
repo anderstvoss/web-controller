@@ -181,36 +181,52 @@ impl Registry {
     pub(crate) fn snapshot(&mut self) -> AdminSnapshot {
         self.expire();
         let now = Instant::now();
-        let mut sessions: Vec<_> = self.sessions.iter().map(|(&id, session)| {
-            let status = if session.closing {
-                "closing"
-            } else if session.socket.is_some() {
-                "connected"
-            } else if session.device.is_some() {
-                "reconnecting"
-            } else {
-                "authorized"
-            };
-            SessionView {
-                id,
-                status,
-                connections: session.connections,
-                frames: session.frames,
-                expires_in_seconds: session.expires.map(|end| end.saturating_duration_since(now).as_secs()),
-            }
-        }).collect();
+        let mut sessions: Vec<_> = self
+            .sessions
+            .iter()
+            .map(|(&id, session)| {
+                let status = if session.closing {
+                    "closing"
+                } else if session.socket.is_some() {
+                    "connected"
+                } else if session.device.is_some() {
+                    "reconnecting"
+                } else {
+                    "authorized"
+                };
+                SessionView {
+                    id,
+                    status,
+                    connections: session.connections,
+                    frames: session.frames,
+                    expires_in_seconds: session
+                        .expires
+                        .map(|end| end.saturating_duration_since(now).as_secs()),
+                }
+            })
+            .collect();
         sessions.sort_by_key(|entry| entry.id);
-        let mut invites: Vec<_> = self.invites.iter().map(|invite| InviteView {
-            id: invite.id,
-            reusable: invite.expires.is_none(),
-            expires_in_seconds: invite.expires.map(|end| end.saturating_duration_since(now).as_secs()),
-        }).collect();
+        let mut invites: Vec<_> = self
+            .invites
+            .iter()
+            .map(|invite| InviteView {
+                id: invite.id,
+                reusable: invite.expires.is_none(),
+                expires_in_seconds: invite
+                    .expires
+                    .map(|end| end.saturating_duration_since(now).as_secs()),
+            })
+            .collect();
         invites.sort_by_key(|entry| entry.id);
-        let mut requests: Vec<_> = self.requests.iter().map(|(&id, request)| RequestView {
-            id,
-            approved: request.approved,
-            expires_in_seconds: request.expires.saturating_duration_since(now).as_secs(),
-        }).collect();
+        let mut requests: Vec<_> = self
+            .requests
+            .iter()
+            .map(|(&id, request)| RequestView {
+                id,
+                approved: request.approved,
+                expires_in_seconds: request.expires.saturating_duration_since(now).as_secs(),
+            })
+            .collect();
         requests.sort_by_key(|entry| entry.id);
         AdminSnapshot {
             exposure_enabled: !self.exposure_paused,
@@ -295,7 +311,10 @@ impl Registry {
     }
 
     fn capacity(&self) -> Result<(), Error> {
-        if self.stopping || self.exposure_paused || self.sessions.len() >= self.session_limit.unwrap_or(MAX_SESSIONS) {
+        if self.stopping
+            || self.exposure_paused
+            || self.sessions.len() >= self.session_limit.unwrap_or(MAX_SESSIONS)
+        {
             return Err(Error::Busy);
         }
         Ok(())

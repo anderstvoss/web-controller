@@ -35,7 +35,9 @@ impl AdminAssets {
             fs::read_to_string(root.join(name)).map_err(|error| {
                 std::io::Error::new(
                     error.kind(),
-                    format!("admin asset {name} missing; run npm ci and npm run build in web/: {error}"),
+                    format!(
+                        "admin asset {name} missing; run npm ci and npm run build in web/: {error}"
+                    ),
                 )
             })
         };
@@ -269,10 +271,14 @@ fn validate_origin(origin: &str) -> Result<(), &'static str> {
     let uri: Uri = origin.parse().map_err(|_| "invalid administrator origin")?;
     if !matches!(uri.scheme_str(), Some("http" | "https"))
         || uri.authority().is_none()
-        || uri.path_and_query().is_some_and(|part| part.as_str() != "/")
+        || uri
+            .path_and_query()
+            .is_some_and(|part| part.as_str() != "/")
         || origin.ends_with('/')
         || origin.contains(['#', '?'])
-        || uri.authority().is_some_and(|authority| authority.as_str().contains('@'))
+        || uri
+            .authority()
+            .is_some_and(|authority| authority.as_str().contains('@'))
     {
         return Err("admin origin must be a bare HTTP(S) origin");
     }
@@ -298,12 +304,16 @@ pub(crate) async fn start(
         return Err("admin listener must use a separate, nonzero loopback-only port".into());
     }
     let token = env::var("WEB_CONTROLLER_ADMIN_TOKEN")?;
-    if !(32..=512).contains(&token.len()) || !token.is_ascii() || token.contains(char::is_whitespace)
+    if !(32..=512).contains(&token.len())
+        || !token.is_ascii()
+        || token.contains(char::is_whitespace)
     {
-        return Err("WEB_CONTROLLER_ADMIN_TOKEN must be 32-512 non-whitespace ASCII characters".into());
+        return Err(
+            "WEB_CONTROLLER_ADMIN_TOKEN must be 32-512 non-whitespace ASCII characters".into(),
+        );
     }
-    let origin = env::var("WEB_CONTROLLER_ADMIN_ORIGIN")
-        .unwrap_or_else(|_| format!("http://{address}"));
+    let origin =
+        env::var("WEB_CONTROLLER_ADMIN_ORIGIN").unwrap_or_else(|_| format!("http://{address}"));
     validate_origin(&origin)?;
     let assets = Arc::new(AdminAssets::load(assets_root)?);
     let listener = TcpListener::bind(address).await?;
@@ -356,15 +366,22 @@ mod tests {
         );
         assert!(!authenticated(&headers, &state));
         headers.remove(header::AUTHORIZATION);
-        headers.insert(header::ORIGIN, HeaderValue::from_static("https://example.test"));
+        headers.insert(
+            header::ORIGIN,
+            HeaderValue::from_static("https://example.test"),
+        );
         assert!(origin_matches(&headers, &state.origin));
-        headers.append(header::ORIGIN, HeaderValue::from_static("https://example.test"));
+        headers.append(
+            header::ORIGIN,
+            HeaderValue::from_static("https://example.test"),
+        );
         assert!(!origin_matches(&headers, &state.origin));
     }
 
 
     #[tokio::test]
-    async fn HTTP_operator_auth_and_live_exposure_controls() {
+    #[expect(clippy::too_many_lines, reason = "integration scenario checks the same operator client and registry")]
+    async fn http_operator_auth_and_live_exposure_controls() {
         use std::net::Ipv4Addr;
         use tokio::{
             io::{AsyncReadExt, AsyncWriteExt},
@@ -410,7 +427,11 @@ mod tests {
             .unwrap();
             let response = String::from_utf8(bytes).unwrap();
             let (headers, contents) = response.split_once("\r\n\r\n").unwrap();
-            assert!(headers.to_ascii_lowercase().contains("cache-control: no-store"));
+            assert!(
+                headers
+                    .to_ascii_lowercase()
+                    .contains("cache-control: no-store")
+            );
             let status = headers.split_whitespace().nth(1).unwrap().parse().unwrap();
             (status, contents.into())
         }
@@ -426,11 +447,39 @@ mod tests {
         assert_eq!(request(address, "GET", "/api/state", "", false, false).await.0, 401);
         assert_eq!(request(address, "GET", "/api/state", "", true, false).await.0, 200);
         assert_eq!(
-            request(address, "POST", "/api/invites", r#"{"reusable":false}"#, true, false).await.0,
+            request(address, "GET", "/api/state", "", false, false)
+                .await
+                .0,
+            401
+        );
+        assert_eq!(
+            request(address, "GET", "/api/state", "", true, false)
+                .await
+                .0,
+            200
+        );
+        assert_eq!(
+            request(
+                address,
+                "POST",
+                "/api/invites",
+                r#"{"reusable":false}"#,
+                true,
+                false
+            )
+            .await
+            .0,
             403,
         );
-        let (code, invite) =
-            request(address, "POST", "/api/invites", r#"{"reusable":false}"#, true, true).await;
+        let (code, invite) = request(
+            address,
+            "POST",
+            "/api/invites",
+            r#"{"reusable":false}"#,
+            true,
+            true,
+        )
+        .await;
         assert_eq!(code, 201);
         let created: serde_json::Value = serde_json::from_str(&invite).unwrap();
         let id = created["id"].as_u64().unwrap();
@@ -448,7 +497,9 @@ mod tests {
                 r#"{"exposure_enabled":true,"join_requests_enabled":true,"max_sessions":0}"#,
                 true,
                 true,
-            ).await.0,
+            )
+            .await
+            .0,
             400,
         );
         let (code, _) = request(
@@ -458,7 +509,8 @@ mod tests {
             r#"{"exposure_enabled":false,"join_requests_enabled":false,"max_sessions":2}"#,
             true,
             true,
-        ).await;
+        )
+        .await;
         assert_eq!(code, 200);
         let (code, body) = request(address, "GET", "/api/state", "", true, false).await;
         assert_eq!(code, 200);
@@ -470,13 +522,29 @@ mod tests {
         assert!(snapshot["invites"].as_array().unwrap().is_empty());
         assert!(!body.contains(&session_token));
         assert_eq!(
-            request(address, "POST", "/api/invites", r#"{"reusable":false}"#, true, true).await.0,
+            request(
+                address,
+                "POST",
+                "/api/invites",
+                r#"{"reusable":false}"#,
+                true,
+                true
+            )
+            .await
+            .0,
             409,
         );
         assert_eq!(
-            request(address, "POST", &format!("/api/invites/{id}/revoke"), "{}", true, true)
-                .await
-                .0,
+            request(
+                address,
+                "POST",
+                &format!("/api/invites/{id}/revoke"),
+                "{}",
+                true,
+                true
+            )
+            .await
+            .0,
             404,
         );
         task.abort();
