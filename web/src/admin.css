@@ -61,10 +61,13 @@ form {
 #settings-form label {
   padding-right: 6px;
 }
-input:not([type="checkbox"]), select, button {
+input:not([type="checkbox"]),
+select,
+button {
   font: inherit;
 }
-input:not([type="checkbox"]), select {
+input:not([type="checkbox"]),
+select {
   padding: 10px;
   background: #101a29;
   color: #fff;
@@ -79,7 +82,8 @@ button {
   border-radius: 7px;
   cursor: pointer;
 }
-button:hover, button:focus-visible {
+button:hover,
+button:focus-visible {
   background: #507faf;
 }
 button:disabled {

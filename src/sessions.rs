@@ -651,7 +651,6 @@ mod tests {
 
     use proptest::prelude::*;
 
-
     #[test]
     fn admin_exposure_revokes_invites_joins_and_sessions() {
         let mut registry = Registry::default();

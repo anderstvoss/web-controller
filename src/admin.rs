@@ -378,7 +378,6 @@ mod tests {
         assert!(!origin_matches(&headers, &state.origin));
     }
 
-
     #[tokio::test]
     #[expect(
         clippy::too_many_lines,
