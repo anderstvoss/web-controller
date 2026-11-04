@@ -38,7 +38,7 @@ interface IssuedInvite {
 
 function requireElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
-  if (!element) throw new Error(`Missing required operator element ${selector}`);
+  if (!element) throw new Error(`Missing operator element ${selector}`);
   return element;
 }
 
@@ -94,7 +94,10 @@ function button(label: string, action: () => Promise<void>): HTMLButtonElement {
   return item;
 }
 
-function listEntry(description: string, actions: HTMLButtonElement[] = []): HTMLLIElement {
+function listEntry(
+  description: string,
+  actions: HTMLButtonElement[] = [],
+): HTMLLIElement {
   const element = document.createElement("li");
   const label = document.createElement("span");
   label.textContent = description;
@@ -114,8 +117,14 @@ function render(snapshot: Snapshot) {
   invites.replaceChildren(
     ...snapshot.invites.map((invite) =>
       listEntry(
-        `Invite ${invite.id} · ${invite.reusable ? "reusable" : relativeExpiry(invite.expires_in_seconds)}`,
-        [button("Revoke", () => command(`/api/invites/${invite.id}/revoke`, {}))],
+        `Invite ${invite.id} · ${
+          invite.reusable ? "reusable" : relativeExpiry(invite.expires_in_seconds)
+        }`,
+        [
+          button("Revoke", () =>
+            command(`/api/invites/${invite.id}/revoke`, {}),
+          ),
+        ],
       ),
     ),
   );
@@ -125,7 +134,7 @@ function render(snapshot: Snapshot) {
         describeSession(session),
         [
           button("Kick", async () => {
-            if (!window.confirm(`End controller session ${session.id}?`)) return;
+            if (!window.confirm(`Kick controller ${session.id}?`)) return;
             await command(`/api/sessions/${session.id}/kick`, {});
           }),
         ],
@@ -135,7 +144,9 @@ function render(snapshot: Snapshot) {
   requests.replaceChildren(
     ...snapshot.requests.map((request) =>
       listEntry(
-        `Request ${request.id} · ${request.approved ? "approved" : "pending"} · ${relativeExpiry(request.expires_in_seconds)}`,
+        `Request ${request.id} · ${
+          request.approved ? "approved" : "pending"
+        } · ${relativeExpiry(request.expires_in_seconds)}`,
         [
           button("Approve", () =>
             command(`/api/requests/${request.id}/resolve`, { approved: true }),
@@ -156,7 +167,8 @@ async function refresh() {
     const snapshot = await api<Snapshot>("/api/state");
     if (snapshot) render(snapshot);
   } catch (error) {
-    setFeedback(error instanceof Error ? error.message : "Unable to refresh status");
+    const message = error instanceof Error ? error.message : "Refresh failed";
+    setFeedback(message);
   } finally {
     loading = false;
   }
@@ -191,7 +203,9 @@ form.addEventListener("submit", (event) => {
   });
 });
 
-requireElement<HTMLFormElement>("#settings-form").addEventListener("submit", (event) => {
+requireElement<HTMLFormElement>("#settings-form").addEventListener(
+  "submit",
+  (event) => {
   event.preventDefault();
   void perform(async () => {
     if (
@@ -207,8 +221,8 @@ requireElement<HTMLFormElement>("#settings-form").addEventListener("submit", (ev
       join_requests_enabled: joins.checked,
       max_sessions: Number(capacity.value),
     });
-  });
-});
+  },
+);
 
 requireElement<HTMLButtonElement>("#issue").addEventListener("click", () => {
   void perform(async () => {
