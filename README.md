@@ -84,10 +84,10 @@ gitleaks detect
 ruff check .    # Python helpers under scripts/
 ```
 
-The M1 browser interface currently uses no-build static ES modules in
-`assets/`, with Node's built-in test runner; this is deliberately an interim
-frontend. A future TypeScript `web/` migration must include the frontend
-hardening profile before merging; see
+The mobile controller and M2.5 management pages are now built from strict
+TypeScript in `web/src/`. Use the pinned Node/npm toolchain and lockfile,
+`npm ci`, and `npm run build`. CI enforces frontend formatting, linting,
+types, tests, licenses and supply-chain checks; see
 [docs/HARDENING-CHECKLIST.md](docs/HARDENING-CHECKLIST.md#frontend-web-onboarding).
 
 Before publishing or merging anything that matters, run a deep gitleaks
