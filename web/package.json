@@ -10,7 +10,7 @@
   "packageManager": "npm@10.9.9",
   "scripts": {
     "build": "tsc -p tsconfig.build.json && node build-assets.mjs",
-    "format:check": "prettier --check .",
+    "format:check": "prettier --check . || (echo ADMIN_FORMAT_CSS_BEGIN && prettier src/admin.css && echo ADMIN_FORMAT_CSS_END && echo ADMIN_FORMAT_HTML_BEGIN && prettier src/admin.html && echo ADMIN_FORMAT_HTML_END && echo ADMIN_FORMAT_TS_BEGIN && prettier src/admin.mts && echo ADMIN_FORMAT_TS_END && exit 1)",
     "lint": "eslint --max-warnings 0 .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
