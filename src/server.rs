@@ -321,6 +321,22 @@ async fn styles(State(state): State<ServiceState>) -> impl IntoResponse {
     )
 }
 
+fn router(state: ServiceState) -> Router {
+    Router::new()
+        .route("/", get(index))
+        .route("/app.mjs", get(app_js))
+        .route("/input-model.mjs", get(model_js))
+        .route("/style.css", get(styles))
+        .route("/pair", post(pair))
+        .route("/join/request", post(request_join))
+        .route("/join/claim", post(claim_join))
+        .route("/session", post(session_status))
+        .route("/session/end", post(end_session))
+        .route("/input", get(upgrade))
+        .layer(DefaultBodyLimit::max(512))
+        .with_state(state)
+}
+
 async fn shutdown(terminal: tokio::sync::oneshot::Receiver<()>) {
     #[cfg(unix)]
     {
@@ -372,19 +388,7 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         sessions: sessions.clone(),
         assets,
     };
-    let app = Router::new()
-        .route("/", get(index))
-        .route("/app.mjs", get(app_js))
-        .route("/input-model.mjs", get(model_js))
-        .route("/style.css", get(styles))
-        .route("/pair", post(pair))
-        .route("/join/request", post(request_join))
-        .route("/join/claim", post(claim_join))
-        .route("/session", post(session_status))
-        .route("/session/end", post(end_session))
-        .route("/input", get(upgrade))
-        .layer(DefaultBodyLimit::max(512))
-        .with_state(state);
+    let app = router(state);
     let terminal = operator::start(sessions.clone(), origin);
     let sweep_sessions = sessions.clone();
     let sweep = tokio::spawn(async move {
@@ -432,3 +436,7 @@ mod tests {
         assert_eq!(cookie(&headers, "session"), None);
     }
 }
+
+#[cfg(test)]
+#[path = "server/tests/network.rs"]
+mod network_tests;

@@ -21,6 +21,8 @@ tokio = { version = "1.53.3", features = ["macros", "rt-multi-thread", "net", "s
 virtualgamepad = { version = "=0.1.0", git = "https://github.com/anderstvoss/virtualgamepad", rev = "9e00a063586568a059ca5e91976c5e829c20fbae" }
 
 [dev-dependencies]
+futures-util = { version = "0.3.34", default-features = false, features = ["sink", "std", "async-await"] }
+tokio-tungstenite = "0.29.0"
 proptest = "1.9.0"
 
 [lints.rust]
