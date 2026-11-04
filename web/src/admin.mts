@@ -69,7 +69,7 @@ async function api<T>(path: string, body?: object): Promise<T | null> {
     cache: "no-store",
     credentials: "omit",
     headers: {
-      Authorization: `***
+      Authorization: `Bearer ${token}`,
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
