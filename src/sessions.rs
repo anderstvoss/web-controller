@@ -7,6 +7,7 @@ use std::{
 };
 
 use rand::{random, random_range};
+use serde::Serialize;
 use subtle::ConstantTimeEq;
 use tokio::sync::{oneshot, watch};
 
@@ -91,6 +92,10 @@ pub(crate) struct Registry {
     sessions: HashMap<u64, Session>,
     failures: Option<(Instant, u8)>,
     stopping: bool,
+    // Runtime-only administrative admission policy. Defaults retain M2 behavior.
+    exposure_paused: bool,
+    joins_blocked: bool,
+    session_limit: Option<usize>,
     #[cfg(test)]
     pub(crate) owner: Option<TestOwner>,
 }
@@ -98,6 +103,40 @@ pub(crate) struct Registry {
 #[cfg(test)]
 type TestOwner =
     fn(watch::Receiver<DeviceInput>, oneshot::Sender<Result<(), String>>) -> Result<(), String>;
+
+/// Safe, secret-free administrative status response.
+#[derive(Serialize)]
+pub(crate) struct AdminSnapshot {
+    pub exposure_enabled: bool,
+    pub join_requests_enabled: bool,
+    pub max_sessions: usize,
+    pub sessions: Vec<SessionView>,
+    pub invites: Vec<InviteView>,
+    pub requests: Vec<RequestView>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct SessionView {
+    pub id: u64,
+    pub status: &'static str,
+    pub connections: u64,
+    pub frames: u64,
+    pub expires_in_seconds: Option<u64>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct InviteView {
+    pub id: u64,
+    pub reusable: bool,
+    pub expires_in_seconds: Option<u64>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct RequestView {
+    pub id: u64,
+    pub approved: bool,
+    pub expires_in_seconds: u64,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Error {
@@ -115,6 +154,9 @@ impl Sessions {
     pub(crate) fn attach(&self, token: &str) -> Result<SocketLease, Error> {
         let mut registry = self.lock();
         registry.expire();
+        if registry.exposure_paused {
+            return Err(Error::Busy);
+        }
         let (&id, session) = registry
             .sessions
             .iter_mut()
@@ -136,6 +178,76 @@ impl Sessions {
 }
 
 impl Registry {
+    pub(crate) fn snapshot(&mut self) -> AdminSnapshot {
+        self.expire();
+        let now = Instant::now();
+        let mut sessions: Vec<_> = self.sessions.iter().map(|(&id, session)| {
+            let status = if session.closing {
+                "closing"
+            } else if session.socket.is_some() {
+                "connected"
+            } else if session.device.is_some() {
+                "reconnecting"
+            } else {
+                "authorized"
+            };
+            SessionView {
+                id,
+                status,
+                connections: session.connections,
+                frames: session.frames,
+                expires_in_seconds: session.expires.map(|end| end.saturating_duration_since(now).as_secs()),
+            }
+        }).collect();
+        sessions.sort_by_key(|entry| entry.id);
+        let mut invites: Vec<_> = self.invites.iter().map(|invite| InviteView {
+            id: invite.id,
+            reusable: invite.expires.is_none(),
+            expires_in_seconds: invite.expires.map(|end| end.saturating_duration_since(now).as_secs()),
+        }).collect();
+        invites.sort_by_key(|entry| entry.id);
+        let mut requests: Vec<_> = self.requests.iter().map(|(&id, request)| RequestView {
+            id,
+            approved: request.approved,
+            expires_in_seconds: request.expires.saturating_duration_since(now).as_secs(),
+        }).collect();
+        requests.sort_by_key(|entry| entry.id);
+        AdminSnapshot {
+            exposure_enabled: !self.exposure_paused,
+            join_requests_enabled: !self.joins_blocked,
+            max_sessions: self.session_limit.unwrap_or(MAX_SESSIONS),
+            sessions,
+            invites,
+            requests,
+        }
+    }
+
+    /// Disabling exposure revokes admission credentials and ends every device.
+    pub(crate) fn set_exposure(&mut self, enabled: bool) {
+        self.exposure_paused = !enabled;
+        if !enabled {
+            self.invites.clear();
+            self.requests.clear();
+            let ids: Vec<_> = self.sessions.keys().copied().collect();
+            for id in ids {
+                self.end(id);
+            }
+        }
+    }
+
+    /// New policy applies to future admissions; existing excess sessions stay.
+    pub(crate) fn set_policy(&mut self, join_requests_enabled: bool, max_sessions: usize) -> bool {
+        if !(1..=MAX_SESSIONS).contains(&max_sessions) {
+            return false;
+        }
+        self.joins_blocked = !join_requests_enabled;
+        self.session_limit = Some(max_sessions);
+        if !join_requests_enabled {
+            self.requests.clear();
+        }
+        true
+    }
+
     fn id(&mut self) -> u64 {
         self.next_id += 1;
         self.next_id
@@ -161,7 +273,7 @@ impl Registry {
 
     pub(crate) fn invite(&mut self, reusable: bool) -> Result<(u64, String, String), Error> {
         self.expire();
-        if self.stopping || self.invites.len() >= MAX_PENDING {
+        if self.stopping || self.exposure_paused || self.invites.len() >= MAX_PENDING {
             return Err(Error::Busy);
         }
         let digits = loop {
@@ -183,7 +295,7 @@ impl Registry {
     }
 
     fn capacity(&self) -> Result<(), Error> {
-        if self.stopping || self.sessions.len() >= MAX_SESSIONS {
+        if self.stopping || self.exposure_paused || self.sessions.len() >= self.session_limit.unwrap_or(MAX_SESSIONS) {
             return Err(Error::Busy);
         }
         Ok(())
@@ -209,6 +321,9 @@ impl Registry {
 
     pub(crate) fn redeem(&mut self, credential: &str) -> Result<String, Error> {
         self.expire();
+        if self.stopping || self.exposure_paused {
+            return Err(Error::Busy);
+        }
         let now = Instant::now();
         let (started, failures) = self.failures.get_or_insert((now, 0));
         if now.duration_since(*started) >= Duration::from_secs(60) {
@@ -243,6 +358,9 @@ impl Registry {
 
     pub(crate) fn request(&mut self, cookie: Option<&str>) -> Result<(u64, String), Error> {
         self.expire();
+        if self.exposure_paused || self.joins_blocked {
+            return Err(Error::Busy);
+        }
         if let Some((&id, request)) = self
             .requests
             .iter()
@@ -281,6 +399,9 @@ impl Registry {
 
     pub(crate) fn claim(&mut self, cookie: &str) -> Result<String, Error> {
         self.expire();
+        if self.exposure_paused || self.joins_blocked {
+            return Err(Error::Busy);
+        }
         let (&id, request) = self
             .requests
             .iter()
@@ -421,6 +542,9 @@ impl SocketLease {
     ) -> Option<watch::Receiver<bool>> {
         let mut registry = self.sessions.lock();
         registry.expire();
+        if registry.exposure_paused {
+            return None;
+        }
         let session = registry.sessions.get_mut(&self.id)?;
         if session.closing {
             return None;
@@ -507,6 +631,61 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use proptest::prelude::*;
+
+
+    #[test]
+    fn admin_exposure_revokes_invites_joins_and_sessions() {
+        let mut registry = Registry::default();
+        let (_, invite, _) = registry.invite(false).unwrap();
+        let (request_id, request_token) = registry.request(None).unwrap();
+        let token = registry.redeem(&invite).unwrap();
+        let id = *registry.sessions.keys().next().unwrap();
+        registry.set_exposure(false);
+        assert!(!registry.snapshot().exposure_enabled);
+        assert!(registry.snapshot().sessions.is_empty());
+        assert!(registry.snapshot().invites.is_empty());
+        assert!(registry.snapshot().requests.is_empty());
+        assert_eq!(registry.redeem(&invite), Err(Error::Busy));
+        assert_eq!(registry.request(None), Err(Error::Busy));
+        assert_eq!(registry.claim(&request_token), Err(Error::Busy));
+        assert!(!registry.resolve(request_id, true));
+        assert!(!registry.has_session(&token));
+        assert!(!registry.end(id));
+        registry.set_exposure(true);
+        assert!(registry.snapshot().exposure_enabled);
+        assert!(registry.invite(false).is_ok());
+    }
+
+    #[test]
+    fn admin_policy_limits_new_sessions_and_disables_requests() {
+        let mut registry = Registry::default();
+        assert!(!registry.set_policy(true, 0));
+        assert!(!registry.set_policy(true, MAX_SESSIONS + 1));
+        let (id, request) = registry.request(None).unwrap();
+        assert!(registry.set_policy(false, 1));
+        assert_eq!(registry.request(None), Err(Error::Busy));
+        assert_eq!(registry.claim(&request), Err(Error::Busy));
+        assert!(!registry.resolve(id, true));
+        let (_, credential, _) = registry.invite(true).unwrap();
+        assert!(registry.redeem(&credential).is_ok());
+        assert_eq!(registry.redeem(&credential), Err(Error::Busy));
+        assert_eq!(registry.snapshot().max_sessions, 1);
+        assert!(!registry.snapshot().join_requests_enabled);
+    }
+
+    #[test]
+    fn admin_snapshot_omits_secret_tokens_and_pins() {
+        let mut registry = Registry::default();
+        let (_, token, pin) = registry.invite(true).unwrap();
+        let (_, request_token) = registry.request(None).unwrap();
+        let session = registry.authorize();
+        let serialized = serde_json::to_string(&registry.snapshot()).unwrap();
+        assert!(!serialized.contains(&token));
+        assert!(!serialized.contains(&pin));
+        assert!(!serialized.contains(&request_token));
+        assert!(!serialized.contains(&session));
+        assert!(serialized.contains("authorized"));
+    }
 
     proptest! {
         #[test]
