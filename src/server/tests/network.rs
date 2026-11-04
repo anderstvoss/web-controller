@@ -166,6 +166,12 @@ fn test_state(sessions: Sessions) -> ServiceState {
     ServiceState {
         origin: "https://example.test".into(),
         sessions,
+        assets: std::sync::Arc::new(super::Assets {
+            index: String::new(),
+            app: String::new(),
+            model: String::new(),
+            styles: String::new(),
+        }),
     }
 }
 
