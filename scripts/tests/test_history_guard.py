@@ -49,6 +49,14 @@ class ContentProblems(unittest.TestCase):
             self.assertEqual(len(problems), 1, text)
             self.assertIn(label, problems[0])
 
+    def test_transport_loopback_exception_preserves_other_blockers(self):
+        loopback = '.'.join(['127', '0', '0', '1']).encode()
+        path = 'src/server/tests/network.rs'
+        self.assertEqual(history_guard.content_problems(path, loopback), [])
+        self.assertTrue(history_guard.content_problems('src/server.rs', loopback))
+        self.assertTrue(history_guard.content_problems(path, PRIVATE_IP.encode()))
+        self.assertTrue(history_guard.content_problems(path, HOME_PATH.encode()))
+
     def test_clean_and_skipped_files(self):
         self.assertEqual(history_guard.content_problems('a.md', b'version = "10.2.1"\n'), [])
         self.assertEqual(history_guard.content_problems('.pre-commit-config.yaml',

@@ -61,7 +61,12 @@ def content_problems(path, data):
     problems = []
     for label, pattern in PATTERNS:
         for number, line in enumerate(text.splitlines(), 1):
-            if pattern.search(line):
+            # Match the transport-test exception in the tree hook, allowing
+            # only the loopback bind literal used by this test directory.
+            checked = line
+            if label == 'private network target' and path.startswith('src/server/tests/'):
+                checked = re.sub(r'127\.0\.0\.1', '<test-loopback>', line)
+            if pattern.search(checked):
                 problems.append(f'{path}:{number}: {label}')
                 break
     return problems

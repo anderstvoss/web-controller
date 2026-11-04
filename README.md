@@ -100,49 +100,34 @@ scripts/deep-scan.sh
 Record user-visible changes in [CHANGELOG.md](CHANGELOG.md) under
 `Unreleased`.
 
-## M1 browser-controller prototype
+## Run the LAN controller
 
-M1 accepts **one phone** at a time, maps full-state inputs through the pinned
-`virtualgamepad` Git dependency, and creates a Linux Xbox 360-style uinput
-controller. This is **not** Microsoft's XInput USB protocol. For the contract
-and unverified acceptance gates, see
-[docs/planning/m1-implementation.md](docs/planning/m1-implementation.md).
-
-The Rust service intentionally does not terminate TLS. Configure a **trusted
-HTTPS reverse proxy**, restrict the backend listener to the proxy, and set:
+Run as an unprivileged Linux user with write access to `/dev/uinput`.
+Install `qrencode` for terminal QR invites. Configure a trusted HTTPS reverse
+proxy and restrict the plain HTTP listener to that proxy. Use the exact
+browser origin, including any non-default port and without a trailing slash.
 
 ```sh
 export WEB_CONTROLLER_BIND='<proxy-accessible-bind-address>:<port>'
 export WEB_CONTROLLER_ORIGIN='https://<trusted-hostname>'
-export WEB_CONTROLLER_PAIR_CODE="$(python3 -c 'import secrets; print(f"{secrets.randbelow(10000):04d}-{secrets.randbelow(10000):04d}")')"
-# Display this code to the operator locally; never save it in Git.
-printf '%s\n' "$WEB_CONTROLLER_PAIR_CODE"
-cargo run
+test -w /dev/uinput
+cargo run --locked
 ```
 
-On a phone that can reach the trusted HTTPS origin, open the root page, enter
-the eight-digit pairing code (with or without the hyphen), and press Connect. The page presents touchscreen buttons,
-dual analog sticks, and triggers. The virtual controller is created on
-connection; stale input is neutralized after a watchdog timeout, and the
-controller is destroyed when the WebSocket closes.
+Keep the terminal open. Type `invite` for a QR and eight-digit PIN that expire
+in two minutes. For supervised LAN testing, `invite reusable` creates a QR
+and PIN valid until `revoke ID` or service shutdown. A phone can also open the LAN URL and choose **Request to
+join**. Compare the request ID shown on the phone with `list` in the terminal,
+then type `approve ID` or `reject ID`. Type `end ID` to remove a session or
+`quit` to shut down the service and remove all devices.
 
-Operational requirements: Linux `/dev/uinput` must be present and accessible
-to the service account without running the HTTP service as root. Only expose
-the HTTPS proxy to trusted clients; never forward the unencrypted backend to
-the LAN. This prototype does not provision certificates, trust stores,
-reverse-proxy settings, host ACLs or QR codes. No development credentials
-are built into the frontend.
+Each connected phone owns one Xbox 360-style uinput controller. Up to four
+sessions can be authorized at a time. A dropped connection neutralizes
+controls and reserves its device for 15 seconds so the same browser can
+reconnect. The **End session** button removes the device immediately.
 
-Frontend state tests require only Node.js:
-
-```sh
-node --test assets/input-model.test.mjs
-node --check assets/app.mjs
-```
-
-The full Phase 1 acceptance gate requires an actual Linux host, evdev
-inspection, and an SDL/game consumer test. Until those tests are recorded,
-the implementation must not be described as consumer-validated.
+See the [two-phone acceptance runbook](docs/planning/m2-acceptance.md) for
+verification and troubleshooting.
 
 ## Contributing
 

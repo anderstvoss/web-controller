@@ -15,13 +15,14 @@
   </header>
   <section id="pair-view" class="pair-view">
     <h2>Pair a controller</h2>
-    <p>Enter the pairing code shown on the Linux host. This page requires a trusted HTTPS connection.</p>
+    <p>Scan the host’s QR invite, enter its one-time PIN, or request approval. This page requires a trusted HTTPS connection.</p>
     <form id="pair-form">
       <label for="pair-code">Pairing code</label>
       <input id="pair-code" name="code" type="text" inputmode="numeric" minlength="8" maxlength="9" placeholder="0000-0000"
              autocomplete="off" required>
       <button type="submit">Connect controller</button>
     </form>
+    <button id="request-join" type="button">Request to join</button>
     <p id="pair-error" role="alert"></p>
   </section>
   <main id="controller" class="controller hidden" aria-label="Xbox 360-style touchscreen controller">
@@ -69,6 +70,7 @@
       </div>
     </section>
     <p class="hint">Keep this page visible. Switching apps or locking the phone releases all controls.</p>
+    <button id="end-session" type="button">End session</button>
   </main>
 </body>
 </html>

@@ -99,6 +99,17 @@ fn same_controls(lhs: &InputFrame, rhs: &InputFrame) -> bool {
     lhs.buttons == rhs.buttons && lhs.sticks == rhs.sticks && lhs.triggers == rhs.triggers
 }
 
+#[derive(Clone, Default)]
+pub struct DeviceInput {
+    pub connection: u64,
+    pub frame: Option<InputFrame>,
+}
+
+fn neutralize(device: &mut Xbox360Controller) -> Result<(), String> {
+    device.neutralize().map_err(|error| error.to_string())?;
+    device.commit().map_err(|error| error.to_string())
+}
+
 /// Execute on a dedicated blocking thread; no network IO or Tokio reactor work.
 ///
 /// Sends one startup result before any input is applied. Always closes the
@@ -107,7 +118,7 @@ fn same_controls(lhs: &InputFrame, rhs: &InputFrame) -> bool {
 /// # Errors
 /// Returns an error if creation, input application, servicing or neutralization fails.
 pub fn run_xbox_owner(
-    mut input: watch::Receiver<Option<InputFrame>>,
+    mut input: watch::Receiver<DeviceInput>,
     startup: oneshot::Sender<Result<(), String>>,
 ) -> Result<(), String> {
     let mut device = match create_xbox360(CreationOptions::new(RealizationId::LINUX_UINPUT)) {
@@ -124,10 +135,20 @@ pub fn run_xbox_owner(
     let mut stale = false;
     let mut outcome = Ok(());
 
+    let mut connection = 0;
     while let Ok(changed) = input.has_changed() {
         if changed {
-            let frame = input.borrow_and_update().clone();
-            if let Some(frame) = frame {
+            let next = input.borrow_and_update().clone();
+            if (next.connection != connection || next.frame.is_none()) && !stale {
+                if let Err(error) = neutralize(&mut device) {
+                    outcome = Err(error);
+                    break;
+                }
+                stale = true;
+                last_controls = None;
+            }
+            connection = next.connection;
+            if let Some(frame) = next.frame {
                 last_seen = Instant::now();
                 stale = false;
                 if last_controls
@@ -144,11 +165,7 @@ pub fn run_xbox_owner(
         }
 
         if !stale && last_seen.elapsed() > INPUT_TIMEOUT {
-            if let Err(error) = device
-                .neutralize()
-                .map_err(|error| error.to_string())
-                .and_then(|()| device.commit().map_err(|error| error.to_string()))
-            {
+            if let Err(error) = neutralize(&mut device) {
                 outcome = Err(error);
                 break;
             }
@@ -169,17 +186,9 @@ pub fn run_xbox_owner(
         thread::sleep(delay.max(Duration::from_micros(250)));
     }
 
-    if let Err(error) = device
-        .neutralize()
-        .map_err(|error| error.to_string())
-        .and_then(|()| device.commit().map_err(|error| error.to_string()))
-    {
-        if outcome.is_ok() {
-            outcome = Err(error);
-        }
-    }
+    let cleanup = neutralize(&mut device);
     device.close();
-    outcome
+    outcome.and(cleanup)
 }
 
 #[cfg(test)]
