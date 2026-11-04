@@ -9,6 +9,11 @@ this project adheres to [Semantic Versioning 2.0.0][semver].
 
 ### Added
 
+- M2 isolated controller sessions, terminal QR/PIN invites, reusable LAN test
+  invites, host-approved joins, reconnect grace, expiration and session diagnostics.
+- Automated HTTP/WebSocket lifecycle tests using local clients and fake device
+  owners, plus a separate two-phone input acceptance procedure.
+
 - Initial M1 browser-to-Xbox 360-style uinput implementation, versioned full-state input
   contract, pairing/session checks, input watchdog, and explicit virtualgamepad owner.
 - Static no-build mobile controller layout and Node-native frontend state tests.
