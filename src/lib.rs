@@ -4,5 +4,6 @@ pub mod device;
 pub mod input;
 pub mod server;
 
+mod admin;
 mod operator;
 mod sessions;
