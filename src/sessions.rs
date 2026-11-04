@@ -91,7 +91,13 @@ pub(crate) struct Registry {
     sessions: HashMap<u64, Session>,
     failures: Option<(Instant, u8)>,
     stopping: bool,
+    #[cfg(test)]
+    pub(crate) owner: Option<TestOwner>,
 }
+
+#[cfg(test)]
+type TestOwner =
+    fn(watch::Receiver<DeviceInput>, oneshot::Sender<Result<(), String>>) -> Result<(), String>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Error {
@@ -397,7 +403,11 @@ pub(crate) struct SocketLease {
 
 impl SocketLease {
     pub(crate) fn start(&mut self) -> Option<watch::Receiver<bool>> {
-        self.start_with(run_xbox_owner)
+        #[cfg(test)]
+        let owner = self.sessions.lock().owner.unwrap_or(run_xbox_owner);
+        #[cfg(not(test))]
+        let owner = run_xbox_owner;
+        self.start_with(owner)
     }
 
     fn start_with(

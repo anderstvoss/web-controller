@@ -1027,12 +1027,14 @@ name = "web-controller"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "futures-util",
  "proptest",
  "rand",
  "serde",
  "serde_json",
  "subtle",
  "tokio",
+ "tokio-tungstenite",
  "virtualgamepad",
 ]
 

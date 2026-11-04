@@ -7,14 +7,32 @@ reach the reverse proxy. Confirm the service user can write to `/dev/uinput`
 and read the created evdev devices for inspection. Keep the service terminal
 and an evdev or SDL input tester open on the host.
 
+## Browser and touch acceptance
+
+Use two awake phones for the controls and UI checks. Network lifecycle is
+covered independently by automated local clients.
+
 | Step | Expected observation |
 | --- | --- |
-| Generate two invites and pair phone A by QR and phone B by PIN | Two devices appear. Attempt to reuse each invite's other credential and confirm it is rejected. |
-| Hold A on one phone and move a stick on the other, then swap | Each tester shows only its own phone's input. Check both stick signs, D-pad, buttons, triggers, multi-touch and releases. |
-| Interrupt phone A's network while a control is held, then restore it promptly | The device neutralizes, the browser reconnects within 15 seconds, and the same evdev node resumes. Phone B keeps working. |
-| Disconnect A again and wait beyond 15 seconds | A's node disappears and reconnect requires new authorization. B stays connected. |
-| Open the reusable URL on A and request to join | The phone shows a request ID. Approve that ID with the terminal. A gets a fresh device. |
-| End A from the browser and B from the terminal | Both nodes disappear. Repeat a pairing and use `quit` to verify shutdown teardown. |
+| Pair phone A by QR and phone B by PIN, then exercise host-approved joining | Each route reaches its own controller page. The host approval label matches the requesting browser. |
+| Hold A on one phone and move the other phone's right stick, then release | Each evdev/SDL device shows only its own phone's input and returns to neutral. Check the remaining controls, multi-touch, pointer cancellation, and visibility releases as browser behavior. |
+| Repeat the pairing and input smoke test after migrating the frontend | The built TypeScript assets preserve the pairing and touch behavior. |
+
+## Automated transport and reconnect acceptance
+
+`cargo test --locked --all-features` includes local HTTP/WebSocket clients
+against the real application router with an observable fake device owner.
+These tests need no physical phones, browser, TLS provisioning or kernel devices.
+
+The transport scenario covers two independent sessions, abrupt TCP loss
+without a WebSocket close frame, silent-transport timeout, reconnect within
+grace with a fresh sequence counter, grace expiry and capacity release,
+reusable reauthorization, sequence replay, rate-limit closure, failed device
+startup, explicit end and shutdown cleanup. A heartbeat on the second client
+continues while the first disconnects and expires.
+
+Separate opt-in synthetic host probes exercise the real unprivileged uinput
+backend and SDL. Keep that evidence distinct from browser touch observations.
 
 Use `list` for host session IDs, connection/frame counts and remaining grace.
 Check HTTPS trust and origin configuration if the page loads but pairing or
