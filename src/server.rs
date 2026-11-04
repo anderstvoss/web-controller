@@ -1,6 +1,7 @@
 //! HTTPS-reverse-proxy-facing, origin-restricted LAN controller service.
 use std::{
-    env,
+    env, fs,
+    path::Path,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -33,6 +34,7 @@ const BURST: f64 = 48.0;
 struct ServiceState {
     origin: Arc<str>,
     sessions: Sessions,
+    assets: Arc<Assets>,
 }
 
 #[derive(Deserialize)]
@@ -266,28 +268,56 @@ fn security_headers(content_type: &'static str) -> [(header::HeaderName, &'stati
     ]
 }
 
-async fn index() -> impl IntoResponse {
+struct Assets {
+    index: String,
+    app: String,
+    model: String,
+    styles: String,
+}
+
+impl Assets {
+    fn load(directory: &Path) -> std::io::Result<Self> {
+        let read = |name| {
+            fs::read_to_string(directory.join(name)).map_err(|error| {
+                std::io::Error::new(error.kind(), format!(
+                    "frontend asset {name} unavailable in WEB_CONTROLLER_ASSET_DIR; run npm ci and npm run build in web/: {error}"
+                ))
+            })
+        };
+        Ok(Self {
+            index: read("index.html")?,
+            app: read("app.mjs")?,
+            model: read("input-model.mjs")?,
+            styles: read("style.css")?,
+        })
+    }
+}
+
+async fn index(State(state): State<ServiceState>) -> impl IntoResponse {
     (
         security_headers("text/html; charset=utf-8"),
-        Html(include_str!("../assets/index.html")),
+        Html(state.assets.index.clone()),
     )
 }
-async fn app_js() -> impl IntoResponse {
+
+async fn app_js(State(state): State<ServiceState>) -> impl IntoResponse {
     (
         security_headers("text/javascript; charset=utf-8"),
-        include_str!("../assets/app.mjs"),
+        state.assets.app.clone(),
     )
 }
-async fn model_js() -> impl IntoResponse {
+
+async fn model_js(State(state): State<ServiceState>) -> impl IntoResponse {
     (
         security_headers("text/javascript; charset=utf-8"),
-        include_str!("../assets/input-model.mjs"),
+        state.assets.model.clone(),
     )
 }
-async fn styles() -> impl IntoResponse {
+
+async fn styles(State(state): State<ServiceState>) -> impl IntoResponse {
     (
         security_headers("text/css; charset=utf-8"),
-        include_str!("../assets/style.css"),
+        state.assets.styles.clone(),
     )
 }
 
@@ -349,11 +379,14 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             "WEB_CONTROLLER_ORIGIN must be an HTTPS origin without a trailing slash".into(),
         );
     }
+    let assets_dir = env::var_os("WEB_CONTROLLER_ASSET_DIR").unwrap_or_else(|| "web/dist".into());
+    let assets = Arc::new(Assets::load(Path::new(&assets_dir))?);
     let listener = TcpListener::bind(bind).await?;
     let sessions = Sessions::default();
     let state = ServiceState {
         origin: Arc::from(origin.as_str()),
         sessions: sessions.clone(),
+        assets,
     };
     let app = router(state);
     let terminal = operator::start(sessions.clone(), origin);

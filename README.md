@@ -111,8 +111,17 @@ browser origin, including any non-default port and without a trailing slash.
 export WEB_CONTROLLER_BIND='<proxy-accessible-bind-address>:<port>'
 export WEB_CONTROLLER_ORIGIN='https://<trusted-hostname>'
 test -w /dev/uinput
+(
+  cd web
+  nvm use
+  npm ci
+  npm run build
+)
 cargo run --locked
 ```
+
+Run from the repository root, or set `WEB_CONTROLLER_ASSET_DIR` to the
+built asset directory. The daemon checks for the required assets on startup.
 
 Keep the terminal open. Type `invite` for a QR and eight-digit PIN that expire
 in two minutes. For supervised LAN testing, `invite reusable` creates a QR

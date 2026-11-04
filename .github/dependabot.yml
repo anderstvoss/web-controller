@@ -24,3 +24,8 @@ updates:
     groups:
       pre-commit-toolchain:
         patterns: ["*"]
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly

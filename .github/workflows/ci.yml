@@ -243,7 +243,7 @@ jobs:
       # allowlist. Skip it here — gitleaks-history.yml runs a
       # dedicated full-history gitleaks scan on the same triggers,
       # which is the authoritative coverage.
-      SKIP: cargo-fmt,cargo-check,cargo-clippy,cargo-test,gitleaks
+      SKIP: cargo-fmt,cargo-check,cargo-clippy,cargo-test,gitleaks,frontend-format,frontend-lint,frontend-typecheck,frontend-test
 
     steps:
       - name: Harden runner
@@ -338,6 +338,120 @@ jobs:
       - name: History guard (every reachable file version and commit identity)
         run: python scripts/history_guard.py --identities fail
 
+  frontend-lint:
+    name: Frontend lint
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            codeload.github.com:443
+            objects.githubusercontent.com:443
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            nodejs.org:443
+            registry.npmjs.org:443
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: web/.nvmrc
+          package-manager-cache: false
+
+      - name: Run frontend lint gates
+        working-directory: web
+        run: |
+          npm ci
+          npm run format:check
+          npm run lint
+          npm run typecheck
+
+  frontend-test:
+    name: Frontend test
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            codeload.github.com:443
+            objects.githubusercontent.com:443
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            nodejs.org:443
+            registry.npmjs.org:443
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: web/.nvmrc
+          package-manager-cache: false
+
+      - name: Run frontend test gates
+        working-directory: web
+        run: |
+          npm ci
+          npm test
+          npm run build
+
+  frontend-min-node:
+    name: Frontend minimum Node
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            codeload.github.com:443
+            objects.githubusercontent.com:443
+            *.actions.githubusercontent.com:443
+            *.blob.core.windows.net:443
+            nodejs.org:443
+            registry.npmjs.org:443
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "22.13.0"
+          package-manager-cache: false
+
+      - name: Run frontend minimum node gates
+        working-directory: web
+        run: |
+          npm ci
+          npm run build
+
   supply-chain:
     name: Supply chain audit
     if: ${{ !github.event.repository.private }}
@@ -360,6 +474,8 @@ jobs:
             static.crates.io:443
             index.crates.io:443
             crates.io:443
+            nodejs.org:443
+            registry.npmjs.org:443
             *.actions.githubusercontent.com:443
             *.blob.core.windows.net:443
 
@@ -383,6 +499,19 @@ jobs:
         # The archived action installs cargo-audit without --locked; its
         # dependency resolution now exceeds the runner's Rust version.
         run: cargo install cargo-audit --version 0.22.2 --locked && cargo audit
+
+      - name: Install Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: web/.nvmrc
+          package-manager-cache: false
+
+      - name: Audit frontend dependencies and licenses
+        working-directory: web
+        run: |
+          npm ci
+          npm audit --audit-level=moderate
+          npm run licenses
 
   dependency-review:
     name: Dependency review

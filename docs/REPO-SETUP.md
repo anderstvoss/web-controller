@@ -154,6 +154,10 @@ cat > /tmp/branch-protection.json <<'EOF'
       "Disclosure checks",
       "CodeQL (rust)",
       "CodeQL (actions)",
+      "CodeQL (javascript-typescript)",
+      "Frontend lint",
+      "Frontend test",
+      "Frontend minimum Node",
       "Gitleaks (full history)"
     ]
   },

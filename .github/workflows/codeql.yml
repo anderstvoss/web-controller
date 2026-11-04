@@ -2,7 +2,6 @@ name: CodeQL
 
 on:
   pull_request:
-    branches: [main]
   push:
     branches: [main]
   schedule:
@@ -43,6 +42,8 @@ jobs:
           # Scans the workflow files themselves (script injection,
           # untrusted checkout, excessive permissions). No build needed.
           - language: actions
+            build-mode: none
+          - language: javascript-typescript
             build-mode: none
 
     steps:
@@ -122,7 +123,7 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: codeql-sarif-${{ matrix.language }}
-          path: sarif-results/${{ matrix.language }}.sarif
+          path: sarif-results/*.sarif
           if-no-files-found: error
           retention-days: 1
 
@@ -130,7 +131,7 @@ jobs:
     name: CodeQL upload
     needs: analyze
     # Upload only when every language analysed, so the PR comparison
-    # always sees both configurations at once. A failed analysis is
+    # always sees all configurations at once. A failed analysis is
     # already red on its own CodeQL (<language>) job.
     if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
@@ -185,3 +186,9 @@ jobs:
         with:
           sarif_file: ${{ runner.temp }}/sarif/actions.sarif
           category: "/language:actions"
+
+      - name: Upload JavaScript and TypeScript results
+        uses: github/codeql-action/upload-sarif@bc0b696b4103f5fe60f15749af68a046868d511a # codeql-bundle-v2.25.4
+        with:
+          sarif_file: ${{ runner.temp }}/sarif/javascript.sarif
+          category: "/language:javascript-typescript"

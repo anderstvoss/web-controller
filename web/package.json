@@ -1,0 +1,36 @@
+{
+  "name": "web-controller-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-only",
+  "engines": {
+    "node": ">=22.13.0 <23"
+  },
+  "packageManager": "npm@10.9.9",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node build-assets.mjs",
+    "format:check": "prettier --check .",
+    "lint": "eslint --max-warnings 0 .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "licenses": "license-checker-rseidelsohn --summary --excludePackages 'web-controller-frontend@0.1.0' --onlyAllow 'MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;CC0-1.0;CC-BY-3.0;BlueOak-1.0.0;MPL-2.0;Python-2.0'",
+    "sbom": "cyclonedx-npm --output-file frontend-bom.json"
+  },
+  "devDependencies": {
+    "@cyclonedx/cyclonedx-npm": "6.0.1",
+    "@types/node": "22.20.5",
+    "eslint": "10.14.0",
+    "eslint-plugin-security": "4.2.1",
+    "fast-check": "4.10.2",
+    "license-checker-rseidelsohn": "4.4.2",
+    "prettier": "3.9.10",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.1",
+    "vitest": "5.1.0"
+  },
+  "overrides": {
+    "minimatch": "11.0.2",
+    "glob": "14.0.3"
+  }
+}
