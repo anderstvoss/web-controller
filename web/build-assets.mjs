@@ -8,3 +8,12 @@ await copyFile(
   new URL("src/style.css", import.meta.url),
   new URL("dist/style.css", import.meta.url),
 );
+
+await copyFile(
+  new URL("src/admin.html", import.meta.url),
+  new URL("dist/admin.html", import.meta.url),
+);
+await copyFile(
+  new URL("src/admin.css", import.meta.url),
+  new URL("dist/admin.css", import.meta.url),
+);

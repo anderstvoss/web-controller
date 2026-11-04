@@ -20,6 +20,7 @@ use serde::Deserialize;
 use tokio::net::TcpListener;
 
 use crate::{
+    admin,
     input::parse_frame,
     operator,
     sessions::{Error, Sessions, SocketLease},
@@ -382,7 +383,15 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let assets_dir = env::var_os("WEB_CONTROLLER_ASSET_DIR").unwrap_or_else(|| "web/dist".into());
     let assets = Arc::new(Assets::load(Path::new(&assets_dir))?);
     let listener = TcpListener::bind(bind).await?;
+    let player_port = listener.local_addr()?.port();
     let sessions = Sessions::default();
+    let admin_task = admin::start(
+        sessions.clone(),
+        &origin,
+        player_port,
+        Path::new(&assets_dir),
+    )
+    .await?;
     let state = ServiceState {
         origin: Arc::from(origin.as_str()),
         sessions: sessions.clone(),
@@ -405,6 +414,10 @@ pub async fn serve() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             stop_sessions.lock().shutdown();
         })
         .await;
+    if let Some(task) = admin_task {
+        task.abort();
+        let _ = task.await;
+    }
     sweep.abort();
     sessions.lock().shutdown();
     while !sessions.lock().drained() {

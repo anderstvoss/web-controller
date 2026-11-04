@@ -10,10 +10,10 @@ an ordinary virtual controller through the
 [`virtualgamepad`](https://github.com/anderstvoss/virtualgamepad) library,
 so games, SDL applications and emulators see a normal local device.
 
-> **Status:** M1 implementation candidate. The browser, input contract and
-> Xbox 360-style uinput integration are under validation. Host enumeration,
-> real game/SDL consumption, HTTPS deployment and required CI gates have not
-> yet been demonstrated. See [CHANGELOG.md](CHANGELOG.md) for tracked changes.
+> **Status:** M1 merged. M2 sessions and TypeScript frontend are in stacked
+> PRs #7 and #8; the M2.5 administration console is proposed in PR #9.
+> Automated checks are separate from host enumeration and actual SDL/game
+> consumer acceptance. See [CHANGELOG.md](CHANGELOG.md) for tracked changes.
 
 ## Scope
 
@@ -29,7 +29,7 @@ Planned targets, each gated on evidence from a real Linux consumer:
 |---|---|
 | M1 | Xbox 360-style controller via `linux.uinput` (touch only) |
 | M2 | Multiple phones, QR pairing, reconnects, deployment |
-| M3 | DualSense with phone motion via `linux.uhid.usb` |
+| M2.5 | Separate live operator console, controller/session controls |\n| M3 | DualSense with phone motion via `linux.uhid.usb` |
 | M4/M5 | Wii Remote + MotionPlus and Steam Controller 2026 (Ibex), as independent parallel lanes |
 
 Status claims distinguish **implemented**, **host-enumerated** and
@@ -84,10 +84,10 @@ gitleaks detect
 ruff check .    # Python helpers under scripts/
 ```
 
-The M1 browser interface currently uses no-build static ES modules in
-`assets/`, with Node's built-in test runner; this is deliberately an interim
-frontend. A future TypeScript `web/` migration must include the frontend
-hardening profile before merging; see
+The mobile controller and M2.5 management pages are now built from strict
+TypeScript in `web/src/`. Use the pinned Node/npm toolchain and lockfile,
+`npm ci`, and `npm run build`. CI enforces frontend formatting, linting,
+types, tests, licenses and supply-chain checks; see
 [docs/HARDENING-CHECKLIST.md](docs/HARDENING-CHECKLIST.md#frontend-web-onboarding).
 
 Before publishing or merging anything that matters, run a deep gitleaks
@@ -137,6 +137,44 @@ reconnect. The **End session** button removes the device immediately.
 
 See the [two-phone acceptance runbook](docs/planning/m2-acceptance.md) for
 verification and troubleshooting.
+
+## M2.5 operator console
+
+After building the TypeScript assets, optionally enable the **separate
+loopback-only management listener** with the following settings:
+
+```sh
+export WEB_CONTROLLER_ADMIN_BIND='<loopback-address>:<admin-port>'
+export WEB_CONTROLLER_ADMIN_TOKEN="$(openssl rand -hex 32)"
+# Optional only when accessed through an SSH tunnel with a different origin:
+export WEB_CONTROLLER_ADMIN_ORIGIN='http://<tunnel-hostname>:<admin-port>'
+```
+
+Use a **different port** than `WEB_CONTROLLER_BIND`. The administration
+listener rejects non-loopback addresses and does **not** provide a public LAN
+administration endpoint. Open its URL in a browser on the Linux host, or use
+an authenticated SSH tunnel and set the configured admin origin to the URL
+in that browser. Do not route the admin port through the public controller
+reverse proxy.
+
+Enter `WEB_CONTROLLER_ADMIN_TOKEN` in the operator console. It remains in
+browser memory only. Every API request requires its Bearer header and
+mutations additionally require the configured Origin. The console provides
+live session/connection status, **Kick**, approve/reject joins, revoke
+invitations, issue one-time or reusable controller invitations, enable/disable
+controller exposure, toggle join requests and select a 1–4 session cap.
+
+**Issue new controller** creates a phone enrollment invitation, not an
+unattached virtual gamepad. The corresponding Linux uinput device appears
+only when an invited phone attaches. Disabling exposure immediately revokes
+open invitations and joins and closes all sessions/devices; enabling exposure
+does not recreate them. Settings are runtime-only and default to allowing
+exposure and join requests after restart.
+
+The admin service and phone service share the same session registry. No
+new HID realizations are implemented. Review
+[the M2.5 security and acceptance plan](docs/planning/m2-5-admin-console.md)
+before exposing the service.
 
 ## Contributing
 

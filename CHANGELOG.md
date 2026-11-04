@@ -9,6 +9,8 @@ this project adheres to [Semantic Versioning 2.0.0][semver].
 
 ### Added
 
+- M2.5 separate loopback-only operator console with Bearer authentication, live session snapshots, controller exposure switch, GUI invitation issuance, join review, session kicks and runtime admission settings.
+
 - M2 isolated controller sessions, terminal QR/PIN invites, reusable LAN test
   invites, host-approved joins, reconnect grace, expiration and session diagnostics.
 - Automated HTTP/WebSocket lifecycle tests using local clients and fake device

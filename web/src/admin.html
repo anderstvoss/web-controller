@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Web Controller — Operator Console</title>
+    <link rel="stylesheet" href="/admin.css" />
+    <script type="module" src="/admin.mjs"></script>
+  </head>
+  <body>
+    <header>
+      <h1>Controller Management</h1>
+      <span id="connection-status" role="status" aria-live="polite">
+        Not authenticated
+      </span>
+    </header>
+    <section id="login" class="panel">
+      <h2>Operator authentication</h2>
+      <p>
+        This interface is served on a separate, loopback-only port. The token is
+        not saved.
+      </p>
+      <form id="login-form">
+        <label for="operator-token">Operator token</label>
+        <input
+          id="operator-token"
+          type="password"
+          autocomplete="off"
+          required
+          minlength="32"
+        />
+        <button type="submit">Unlock console</button>
+      </form>
+    </section>
+    <main id="dashboard" class="hidden">
+      <section class="panel">
+        <h2>Exposure and admission</h2>
+        <p>
+          Disabling exposure revokes pending invitations and disconnects all
+          active controllers.
+        </p>
+        <form id="settings-form">
+          <label>
+            <input id="exposure" type="checkbox" />
+            Accept and expose controllers
+          </label>
+          <label>
+            <input id="joins" type="checkbox" /> Allow phone join requests
+          </label>
+          <label for="capacity">Maximum authorized controllers</label>
+          <select id="capacity">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+          </select>
+          <button type="submit">Apply settings</button>
+        </form>
+        <p class="note">
+          Changes are live, but reset when the service restarts.
+        </p>
+      </section>
+      <section class="panel">
+        <h2>Create controller invitation</h2>
+        <p>
+          A local Xbox 360-style controller is created when the invited phone
+          connects. An invitation alone does not create a kernel input device.
+        </p>
+        <label>
+          <input id="reusable" type="checkbox" />
+          Reusable invite (until revoked)
+        </label>
+        <button id="issue" type="button">Issue new controller</button>
+        <div id="issued" aria-live="polite"></div>
+        <h3>Active invitations</h3>
+        <ul id="invites"></ul>
+      </section>
+      <section class="panel">
+        <h2>Connected / reserved controllers</h2>
+        <ul id="sessions"></ul>
+      </section>
+      <section class="panel">
+        <h2>Phone join requests</h2>
+        <ul id="requests"></ul>
+      </section>
+      <p id="feedback" role="alert" aria-live="polite"></p>
+    </main>
+  </body>
+</html>

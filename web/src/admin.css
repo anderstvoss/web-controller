@@ -1,0 +1,133 @@
+:root {
+  font-family: system-ui, sans-serif;
+  color-scheme: dark;
+  color: #edf2f7;
+  background: #121823;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  max-width: 1000px;
+  margin: auto;
+  padding: 22px 18px 48px;
+}
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 14px;
+}
+h1 {
+  font-size: 1.5rem;
+  margin: 0;
+}
+h2 {
+  font-size: 1.1rem;
+  margin: 0 0 10px;
+}
+h3 {
+  font-size: 0.94rem;
+  margin: 16px 0 4px;
+}
+p {
+  color: #cad4e0;
+  font-size: 0.9rem;
+}
+.panel {
+  padding: 20px;
+  margin: 14px 0;
+  background: #1e2938;
+  border-radius: 13px;
+  border: 1px solid #34455a;
+}
+.hidden {
+  display: none !important;
+}
+form {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+#login-form {
+  flex-direction: column;
+  align-items: flex-start;
+}
+#login-form input {
+  min-width: min(100%, 320px);
+}
+#settings-form label {
+  padding-right: 6px;
+}
+input:not([type="checkbox"]),
+select,
+button {
+  font: inherit;
+}
+input:not([type="checkbox"]),
+select {
+  padding: 10px;
+  background: #101a29;
+  color: #fff;
+  border: 1px solid #62718b;
+  border-radius: 6px;
+}
+button {
+  color: white;
+  padding: 9px 13px;
+  background: #376394;
+  border: 1px solid #6398cc;
+  border-radius: 7px;
+  cursor: pointer;
+}
+button:hover,
+button:focus-visible {
+  background: #507faf;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+ul {
+  padding: 0;
+  list-style: none;
+  margin: 6px 0;
+}
+li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  border-top: 1px solid #35455b;
+  padding: 10px 0;
+}
+li span {
+  flex: 1;
+  min-width: 210px;
+  overflow-wrap: anywhere;
+}
+.note {
+  font-size: 0.8rem;
+}
+#issued {
+  margin: 14px 0;
+}
+#issued input {
+  width: min(100%, 610px);
+}
+#feedback {
+  min-height: 1.3rem;
+  color: #d7e4a3;
+}
+#connection-status {
+  color: #adc3d8;
+  font-size: 0.85rem;
+}
+@media (max-width: 600px) {
+  header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
