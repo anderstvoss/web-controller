@@ -106,6 +106,18 @@ function listEntry(
   return element;
 }
 
+function describeInvite(invite: InviteView): string {
+  const expiry = invite.reusable
+    ? "reusable"
+    : relativeExpiry(invite.expires_in_seconds);
+  return `Invite ${invite.id} · ${expiry}`;
+}
+
+function describeRequest(request: RequestView): string {
+  const state = request.approved ? "approved" : "pending";
+  return `Request ${request.id} · ${state} · ${relativeExpiry(request.expires_in_seconds)}`;
+}
+
 function render(snapshot: Snapshot) {
   latest = snapshot;
   if (!settingsDirty) {
@@ -120,9 +132,7 @@ function render(snapshot: Snapshot) {
   invites.replaceChildren(
     ...snapshot.invites.map((invite) =>
       listEntry(
-        `Invite ${invite.id} · ${
-          invite.reusable ? "reusable" : relativeExpiry(invite.expires_in_seconds)
-        }`,
+        describeInvite(invite),
         [
           button("Revoke", () =>
             command(`/api/invites/${invite.id}/revoke`, {}),
@@ -147,9 +157,7 @@ function render(snapshot: Snapshot) {
   requests.replaceChildren(
     ...snapshot.requests.map((request) =>
       listEntry(
-        `Request ${request.id} · ${
-          request.approved ? "approved" : "pending"
-        } · ${relativeExpiry(request.expires_in_seconds)}`,
+        describeRequest(request),
         [
           button("Approve", () =>
             command(`/api/requests/${request.id}/resolve`, { approved: true }),
@@ -221,7 +229,7 @@ requireElement<HTMLFormElement>("#settings-form").addEventListener(
       if (
         latest?.exposure_enabled &&
         !exposed.checked &&
-        !window.confirm("Disable exposure and disconnect all active controllers?")
+        !window.confirm("Disable exposure and disconnect all controllers?")
       ) {
         settingsDirty = false;
         render(latest);
