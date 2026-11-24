@@ -47,7 +47,7 @@ jobs:
 
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:
           # CodeQL pulls bundle + database from a wider set of GitHub
           # CDN endpoints than the standard rust-toolchain flow, so
@@ -142,7 +142,7 @@ jobs:
 
     steps:
       - name: Harden runner
-        uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
+        uses: step-security/harden-runner@aebdcf6156ab6691adf63218240e476564a1ed4c # v2.23.0
         with:
           # The analyze job's GitHub endpoints, in case upload-sarif
           # fetches the CodeQL bundle to process the SARIF.
